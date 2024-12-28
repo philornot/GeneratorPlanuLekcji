@@ -43,27 +43,27 @@ class GeneratorPlanu:
             plan = PlanLekcji(klasa=klasa, lekcje={dzien: {} for dzien in DNI_TYGODNIA})
             logger.info(f"Rozpoczęto generowanie planu dla klasy {klasa.rocznik}{klasa.litera}")
 
-            # Najpierw religia (musi być na początku/końcu dnia)
-            if not self.planowanie.planuj_religie(plany_wygenerowane, plan):
-                logger.error(f"Nie udało się zaplanować religii dla klasy {klasa.rocznik}{klasa.litera}")
-                return None
-
-            # Przedmioty z dużą liczbą godzin i ograniczeniami
-            for przedmiot in ['matematyka', 'polski', 'fizyka']:
+            # 1. Najpierw przedmioty z dużą liczbą godzin i sztywnymi ograniczeniami
+            for przedmiot in ['matematyka', 'polski', 'fizyka', 'historia', 'chemia']:
                 if not self.planowanie.planuj_przedmiot(plany_wygenerowane, plan, przedmiot):
                     return None
 
-            # Przedmioty dzielone na grupy
+            # 2. Przedmioty dzielone na grupy
             for przedmiot in PRZEDMIOTY_DZIELONE:
                 if not self.planowanie.planuj_przedmiot_dzielony(plany_wygenerowane, plan, przedmiot):
                     return None
 
-            # Pozostałe przedmioty
+            # 3. Pozostałe przedmioty (oprócz religii)
             for przedmiot, godziny in PRZEDMIOTY_ROCZNIKI.items():
-                if przedmiot not in PRZEDMIOTY_DZIELONE and przedmiot != 'religia' \
-                        and przedmiot not in ['matematyka', 'polski', 'fizyka']:
+                if przedmiot not in PRZEDMIOTY_DZIELONE and przedmiot not in ['religia', 'matematyka', 'polski',
+                                                                              'fizyka', 'historia', 'chemia']:
                     if not self.planowanie.planuj_przedmiot(plany_wygenerowane, plan, przedmiot):
                         return None
+
+            # 4. Na końcu religia (musi być przed/po innych lekcjach)
+            if not self.planowanie.planuj_religie(plany_wygenerowane, plan):
+                logger.error(f"Nie udało się zaplanować religii dla klasy {klasa.rocznik}{klasa.litera}")
+                return None
 
             # Weryfikacja całego planu
             if not self.walidator.weryfikuj_plan(plan):

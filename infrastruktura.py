@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from stale import TypSali, GODZINY_W_TYGODNIU
 
@@ -21,11 +21,19 @@ class Sala:
         return self.id == other.id
 
 
-@dataclass
+@dataclass(frozen=True)  # Dodajemy frozen=True aby klasa była niemutowalna
 class Grupa:
     id: int
     nazwa: str  # np. "1A1" dla pierwszej grupy z 1A
-    przedmioty: List[str]  # lista przedmiotów dla tej grupy
+    przedmioty: Tuple[str, ...]  # używamy krotki zamiast listy
+
+    def __hash__(self):
+        return hash(self.id)  # używamy id jako klucza do hashowania
+
+    def __eq__(self, other):
+        if not isinstance(other, Grupa):
+            return NotImplemented
+        return self.id == other.id  # porównujemy tylko id grup
 
 
 @dataclass
@@ -104,6 +112,7 @@ def generuj_sale() -> Dict[TypSali, List[Sala]]:
 
 
 def generuj_klasy() -> List[Klasa]:
+    """Generuje wszystkie klasy szkolne."""
     klasy = []
     id_grupy = 1
 
@@ -113,14 +122,14 @@ def generuj_klasy() -> List[Klasa]:
             grupa1 = Grupa(
                 id=id_grupy,
                 nazwa=f"{rocznik}{litera}1",
-                przedmioty=[]  # będzie wypełnione później
+                przedmioty=()  # Pusta krotka zamiast pustej listy
             )
             id_grupy += 1
 
             grupa2 = Grupa(
                 id=id_grupy,
                 nazwa=f"{rocznik}{litera}2",
-                przedmioty=[]  # będzie wypełnione później
+                przedmioty=()  # Pusta krotka zamiast pustej listy
             )
             id_grupy += 1
 

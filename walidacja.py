@@ -1,14 +1,14 @@
 import logging
-from typing import List, Dict, Set
+from typing import List, Dict
 
+from infrastruktura import Sala, Grupa
+from modele import PlanLekcji
+from nauczyciele import Nauczyciel
 from stale import (
     GODZINY_LEKCJI, DNI_TYGODNIA, PRZEDMIOTY_DZIELONE,
     PRZEDMIOTY_PIERWSZE_OSTATNIE, PRZEDMIOTY_BEZ_PIERWSZYCH_OSTATNICH,
     PRZEDMIOTY_POD_RZAD
 )
-from modele import PlanLekcji, Lekcja
-from nauczyciele import Nauczyciel
-from infrastruktura import Sala, Grupa
 
 logger = logging.getLogger(__name__)
 
@@ -151,17 +151,24 @@ class WalidatorPlanu:
             return True
 
         for lekcja in plan.lekcje[dzien][godzina]:
-            # Sprawdź czy któraś z grup nie ma już lekcji w tym czasie
-            for grupa in grupy:
-                if grupa in lekcja.grupy:
-                    return False
+            # Sprawdź czy nie mamy już tego przedmiotu, chyba że to przedmiot dzielony
+            if lekcja.przedmiot == przedmiot and przedmiot not in PRZEDMIOTY_DZIELONE:
+                return False
 
-            if lekcja.przedmiot == przedmiot:
-                return False
-            if lekcja.nauczyciel == nauczyciel:
-                return False
+            # Sprawdź duplikaty sal
             if lekcja.sala == sala:
                 return False
+
+            # Sprawdź duplikaty nauczycieli
+            if lekcja.nauczyciel == nauczyciel:
+                return False
+
+            # Dla przedmiotów dzielonych sprawdź też konflikty grup
+            if przedmiot in PRZEDMIOTY_DZIELONE:
+                for grupa in grupy:
+                    if any(grupa in lekcja.grupy for lekcja in plan.lekcje[dzien][godzina]):
+                        return False
+
         return True
 
     @staticmethod
@@ -204,7 +211,6 @@ class WalidatorPlanu:
                     continue
 
                 for godzina in plan.lekcje[dzien]:
-                    # Sprawdź duplikaty sal i nauczycieli
                     uzyte_sale = set()
                     uzyte_nauczyciele = set()
                     uzyte_grupy = set()
@@ -212,8 +218,8 @@ class WalidatorPlanu:
                     for lekcja in plan.lekcje[dzien][godzina]:
                         # Sprawdź sale
                         if lekcja.sala in uzyte_sale:
-                            logger.error(
-                                f"Duplikat sali {lekcja.sala.nazwa} w dniu {dzien} o godzinie {GODZINY_LEKCJI[godzina][0]}")
+                            logger.error(f"Duplikat sali {lekcja.sala.nazwa} w dniu {dzien} "
+                                         f"o godzinie {GODZINY_LEKCJI[godzina][0]}")
                             return False
                         uzyte_sale.add(lekcja.sala)
 
@@ -223,14 +229,16 @@ class WalidatorPlanu:
                             return False
                         uzyte_nauczyciele.add(lekcja.nauczyciel)
 
-                        # Sprawdź grupy
-                        for grupa in lekcja.grupy:
-                            if grupa in uzyte_grupy:
-                                logger.error(f"Duplikat grupy {grupa.nazwa}")
-                                return False
-                            uzyte_grupy.add(grupa)
+                        # Sprawdź grupy tylko dla przedmiotów dzielonych
+                        if lekcja.przedmiot in PRZEDMIOTY_DZIELONE:
+                            for grupa in lekcja.grupy:
+                                if grupa in uzyte_grupy:
+                                    logger.error(f"Duplikat grupy {grupa.nazwa} na przedmiocie {lekcja.przedmiot}")
+                                    return False
+                                uzyte_grupy.add(grupa)
 
             return True
+
         except Exception as e:
             logger.error(f"Błąd podczas weryfikacji planu: {e}")
             return False
