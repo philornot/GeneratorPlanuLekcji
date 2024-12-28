@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan Lekcji - {{ class_name }}</title>
+    <style>
+      /* Import stylów z base.html */
+      @import url('base.css');
+
+      .class-info {
+        background: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      .class-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .info-item {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .info-label {
+        font-size: 0.875rem;
+        color: #4b5563;
+      }
+
+      .info-value {
+        font-weight: 600;
+        color: var(--text-color);
+      }
+
+      .legend {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin: 1rem 0;
+        padding: 1rem;
+        background: white;
+        border-radius: 0.5rem;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+      }
+
+      .legend-color {
+        width: 1rem;
+        height: 1rem;
+        border-radius: 0.25rem;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .view-button {
+        padding: 0.5rem 1rem;
+        background: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        font-weight: 500;
+      }
+
+      .view-button:hover {
+        background: var(--secondary-color);
+      }
+
+      .view-button.active {
+        background: var(--secondary-color);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <h1>Plan Lekcji - {{ class_name }}</h1>
+      </header>
+      <div class="class-info">
+        <div class="button-group">
+          <button class="view-button active">Widok tygodniowy</button>
+          <button class="view-button">Widok dzienny</button>
+        </div>
+        <div class="class-info-grid">
+          <div class="info-item">
+            <span class="info-label">Wychowawca</span>
+            <span class="info-value">{{ class_teacher }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Liczba uczniów</span>
+            <span class="info-value">{{ students_count }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Sala wychowawcza</span>
+            <span class="info-value">{{ home_room }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-color" style="background: var(--regular-subject-bg)"></div>
+          <span>Przedmioty ogólne</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: var(--split-subject-bg)"></div>
+          <span>Przedmioty dzielone</span>
+        </div>
+      </div>
+      <div class="schedule">
+        <div class="time-slot"></div>
+        <div class="day-header">Poniedziałek</div>
+        <div class="day-header">Wtorek</div>
+        <div class="day-header">Środa</div>
+        <div class="day-header">Czwartek</div>
+        <div class="day-header">Piątek</div> {% for hour in schedule.hours %} <div class="time-slot">
+          <span>{{ hour.start }}</span>
+          <span>{{ hour.end }}</span>
+        </div> {% for day in range(5) %} {% set lessons = schedule.get_lessons(day, hour.index) %} <div class="lesson {% if lessons.is_split %}split{% endif %}"> {% for lesson in lessons %} {% if lesson.group %} <div class="group">Grupa {{ lesson.group }}</div> {% endif %} <div class="subject">{{ lesson.subject }}</div>
+          <div class="teacher">{{ lesson.teacher }}</div>
+          <div class="room">{{ lesson.room }}</div> {% endfor %}
+        </div> {% endfor %} {% endfor %}
+      </div>
+    </div>
+    <script>
+      // Prosty skrypt do przełączania widoków
+      const viewButtons = document.querySelectorAll('.view-button');
+      viewButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          viewButtons.forEach(b => b.classList.remove('active'));
+          button.classList.add('active');
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan Lekcji - Szkoła</title>
+    <style>
+        /* Import stylów z base.html */
+        @import url('base.css');
+
+        .filters {
+            background: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+
+        .filter-select {
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.25rem;
+            min-width: 200px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+
+        .classroom-card {
+            background: white;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .classroom-header {
+            background: var(--header-bg);
+            color: white;
+            padding: 0.75rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .classroom-type {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 0.25rem;
+        }
+
+        .classroom-schedule {
+            padding: 0.5rem;
+        }
+
+        .classroom-hour {
+            display: flex;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .classroom-hour:last-child {
+            border-bottom: none;
+        }
+
+        .hour-time {
+            width: 100px;
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+
+        .hour-details {
+            flex: 1;
+        }
+
+        .navigation {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .nav-button {
+            padding: 0.5rem 1rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-button:hover {
+            background: var(--secondary-color);
+        }
+
+        .occupancy-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .occupancy-bar {
+            width: 100px;
+            height: 0.5rem;
+            background: var(--border-color);
+            border-radius: 0.25rem;
+            overflow: hidden;
+        }
+
+        .occupancy-fill {
+            height: 100%;
+            background: var(--primary-color);
+            transition: width 0.3s ease;
+        }
+
+        @media (max-width: 768px) {
+            .filters {
+                flex-direction: column;
+            }
+
+            .filter-select {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Plan Lekcji - Szkoła</h1>
+        </header>
+
+        <nav class="navigation">
+            <a href="#" class="nav-button">
+                <span>Widok klas</span>
+            </a>
+            <a href="#" class="nav-button">
+                <span>Widok nauczycieli</span>
+            </a>
+            <a href="#" class="nav-button">
+                <span>Widok sal</span>
+            </a>
+        </nav>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label class="filter-label">Dzień</label>
+                <select class="filter-select" id="day-filter">
+                    <option value="0">Poniedziałek</option>
+                    <option value="1">Wtorek</option>
+                    <option value="2">Środa</option>
+                    <option value="3">Czwartek</option>
+                    <option value="4">Piątek</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label class="filter-label">Typ sali</label>
+                <select class="filter-select" id="room-type-filter">
+                    <option value="all">Wszystkie sale</option>
+                    <option value="regular">Sale zwykłe</option>
+                    <option value="computer">Sale komputerowe</option>
+                    <option value="gym">Sale gimnastyczne</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label class="filter-label">Piętro</label>
+                <select class="filter-select" id="floor-filter">
+                    <option value="all">Wszystkie piętra</option>
+                    <option value="0">Parter</option>
+                    <option value="1">1 piętro</option>
+                    <option value="2">2 piętro</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Zajęte sale</div>
+                <div class="stat-value">{{ occupied_rooms }}/{{ total_rooms }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Aktywne klasy</div>
+                <div class="stat-value">{{ active_classes }}/20</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Pracujący nauczyciele</div>
+                <div class="stat-value">{{ active_teachers }}/40</div>
+            </div>
+        </div>
+
+        <div class="schedule-grid">
+            {% for room in rooms %}
+            <div class="classroom-card">
+                <div class="classroom-header">
+                    <span>Sala {{ room.number }}</span>
+                    <span class="classroom-type">{{ room.type }}</span>
+                </div>
+                <div class="classroom-schedule">
+                    {% for hour in room.schedule %}
+                    <div class="classroom-hour">
+                        <div class="hour-time">
+                            {{ hour.start }} - {{ hour.end }}
+                        </div>
+                        <div class="hour-details">
+                            {% if hour.lesson %}
+                            <div class="subject">{{ hour.lesson.subject }}</div>
+                            <div class="teacher">{{ hour.lesson.teacher }}</div>
+                            <div class="group">{{ hour.lesson.class }} {% if hour.lesson.group %}(Grupa {{ hour.lesson.group }}){% endif %}</div>
+                            {% else %}
+                            <div class="empty">Wolna sala</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        // Obsługa filtrów
+        const dayFilter = document.getElementById('day-filter');
+        const roomTypeFilter = document.getElementById('room-type-filter');
+        const floorFilter = document.getElementById('floor-filter');
+
+        function applyFilters() {
+            const day = dayFilter.value;
+            const roomType = roomTypeFilter.value;
+            const floor = floorFilter.value;
+
+            // Tu będzie logika filtrowania
+            console.log('Applying filters:', { day, roomType, floor });
+        }
+
+        dayFilter.addEventListener('change', applyFilters);
+        roomTypeFilter.addEventListener('change', applyFilters);
+        floorFilter.addEventListener('change', applyFilters);
+    </script>
+</body>
+</html>
