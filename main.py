@@ -6,18 +6,13 @@ from typing import List, Dict, Tuple, Optional
 
 from infrastruktura import Sala, Klasa, Grupa, generuj_sale, generuj_klasy
 from nauczyciele import Nauczyciel, generuj_nauczycieli
-from stale import (
-    GODZINY_LEKCJI, DNI_TYGODNIA, PRZEDMIOTY_DZIELONE,
-    PRZEDMIOTY_PIERWSZE_OSTATNIE, PRZEDMIOTY_BEZ_PIERWSZYCH_OSTATNICH,
-    PRZEDMIOTY_POD_RAD, PRZEDMIOTY_ROCZNIKI, TypSali, GODZINY_W_TYGODNIU
-)
+from stale import (GODZINY_LEKCJI, DNI_TYGODNIA, PRZEDMIOTY_DZIELONE, PRZEDMIOTY_PIERWSZE_OSTATNIE,
+                   PRZEDMIOTY_BEZ_PIERWSZYCH_OSTATNICH, PRZEDMIOTY_POD_RAD, PRZEDMIOTY_ROCZNIKI, TypSali,
+                   GODZINY_W_TYGODNIU)
 
 # Konfiguracja logowania
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='generator_planu.log'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
+                    filename='generator_planu.log')
 logger = logging.getLogger(__name__)
 
 
@@ -136,23 +131,12 @@ class GeneratorPlanu:
         godziny = self.policz_lekcje_w_dniu(plan, dzien)
 
         # Wagi dla godzin - preferujemy środek dnia
-        wagi = {
-            0: 1.5,  # Pierwsza lekcja (mniej preferowana)
-            1: 1.2,
-            2: 1.0,
-            3: 1.0,
-            4: 1.0,
-            5: 1.0,
-            6: 1.2,
-            7: 1.3,
-            8: 1.5,  # Ostatnia lekcja (mniej preferowana)
+        wagi = {0: 1.5,  # Pierwsza lekcja (mniej preferowana)
+                1: 1.2, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.2, 7: 1.3, 8: 1.5,  # Ostatnia lekcja (mniej preferowana)
         }
 
         # Oblicz ważone wartości dla każdej godziny
-        wazone_godziny = {
-            godzina: (ilosc * wagi[godzina], godzina)
-            for godzina, ilosc in godziny.items()
-        }
+        wazone_godziny = {godzina: (ilosc * wagi[godzina], godzina) for godzina, ilosc in godziny.items()}
 
         # Zwróć godzinę z najmniejszą ważoną wartością
         return min(wazone_godziny.values(), key=lambda x: x[0])[1]
@@ -224,8 +208,8 @@ class GeneratorPlanu:
                     # Dla pozostałych przedmiotów nie używamy sal WF
                     if typ_sal not in [TypSali.SILOWNIA, TypSali.MALA_SALA_GIM, TypSali.DUZA_HALA]:
                         for sala in sale:
-                            if (sala.dozwolone_przedmioty is None or przedmiot in sala.dozwolone_przedmioty) and \
-                                    sala.pojemnosc_grup >= liczba_grup:
+                            if (
+                                    sala.dozwolone_przedmioty is None or przedmiot in sala.dozwolone_przedmioty) and sala.pojemnosc_grup >= liczba_grup:
                                 odpowiednie_sale.append(sala)
             return odpowiednie_sale
         except Exception as e:
@@ -269,60 +253,133 @@ class GeneratorPlanu:
             return False
 
     def znajdz_nauczyciela_dla_przedmiotu(self, przedmiot: str, dzien: str, godzina: int) -> Optional[Nauczyciel]:
-        """Znajduje dostępnego nauczyciela dla danego przedmiotu."""
         try:
-            # Zbierz wszystkich nauczycieli uczących danego przedmiotu
-            potencjalni_nauczyciele = [n for n in self.nauczyciele if przedmiot in n.przedmioty]
+            logger.info(f"Szukam nauczyciela dla przedmiotu {przedmiot} ({dzien}, {GODZINY_LEKCJI[godzina][0]})")
 
-            # Lista dostępnych nauczycieli (po sprawdzeniu wszystkich warunków)
-            dostepni_nauczyciele = []
+            potencjalni_nauczyciele = [n for n in self.nauczyciele if przedmiot in n.przedmioty]
+            if not potencjalni_nauczyciele:
+                logger.error(f"Brak nauczycieli dla przedmiotu {przedmiot}")
+                return None
+
+            logger.debug(f"Znaleziono {len(potencjalni_nauczyciele)} potencjalnych nauczycieli")
+
+            najlepszy_wynik = -1
+            najlepszy_nauczyciel = None
 
             for nauczyciel in potencjalni_nauczyciele:
-                # Sprawdź podstawową dostępność (dni pracy)
+                logger.debug(f"Sprawdzam nauczyciela: {nauczyciel.imie_nazwisko}")
+
                 if not self.sprawdz_dostepnosc_nauczyciela(nauczyciel, dzien, godzina):
+                    logger.debug(f"Nauczyciel {nauczyciel.imie_nazwisko} jest niedostępny w tym terminie")
                     continue
 
-                # Sprawdź czy nauczyciel nie jest już zajęty w tym czasie w innych planach
+                # Sprawdź zajętość
                 zajety = False
                 for plan in self.plany:
-                    if (dzien in plan.lekcje and
-                            godzina in plan.lekcje[dzien]):
+                    if (dzien in plan.lekcje and godzina in plan.lekcje[dzien]):
                         for lekcja in plan.lekcje[dzien][godzina]:
                             if lekcja.nauczyciel == nauczyciel:
                                 zajety = True
+                                logger.debug(f"Nauczyciel {nauczyciel.imie_nazwisko} ma już lekcję w tym czasie")
                                 break
                     if zajety:
                         break
 
-                if not zajety:
-                    # Sprawdź liczbę godzin w danym dniu
-                    godziny_dzisiaj = 0
-                    for plan in self.plany:
-                        if dzien in plan.lekcje:
-                            for g, lekcje in plan.lekcje[dzien].items():
-                                for lekcja in lekcje:
-                                    if lekcja.nauczyciel == nauczyciel:
-                                        godziny_dzisiaj += 1
+                if zajety:
+                    continue
 
-                    if godziny_dzisiaj < nauczyciel.maks_godzin_dziennie:
-                        # Sprawdź całkowite obciążenie nauczyciela
-                        if self.pobierz_godziny_nauczyciela(nauczyciel) < 20:  # limit tygodniowy
-                            dostepni_nauczyciele.append(nauczyciel)
+                godziny_dzisiaj = self._policz_godziny_w_dniu(nauczyciel, dzien)
+                if godziny_dzisiaj >= nauczyciel.maks_godzin_dziennie:
+                    logger.debug(f"Nauczyciel {nauczyciel.imie_nazwisko} osiągnął limit dzienny")
+                    continue
 
-            # Wybierz nauczyciela z najmniejszą liczbą przydzielonych godzin
-            if dostepni_nauczyciele:
-                return min(dostepni_nauczyciele,
-                           key=lambda n: (self.pobierz_godziny_nauczyciela(n),
-                                          len([l for p in self.plany
-                                               for d in p.lekcje.values()
-                                               for g in d.values()
-                                               for l in g
-                                               if l.nauczyciel == n])))
-            return None
+                godziny_tygodniowo = self.pobierz_godziny_nauczyciela(nauczyciel)
+                if godziny_tygodniowo >= 20:
+                    logger.debug(f"Nauczyciel {nauczyciel.imie_nazwisko} osiągnął limit tygodniowy")
+                    continue
+
+                # System scoringu
+                scoring = {
+                    'obciazenie_dzienne': 1 - (godziny_dzisiaj / nauczyciel.maks_godzin_dziennie),
+                    'obciazenie_tygodniowe': 1 - (godziny_tygodniowo / 20),
+                    'specjalizacja': 1 if przedmiot == nauczyciel.przedmioty[0] else 0.5,
+                    'dostepnosc': len(nauczyciel.dostepne_dni) / 5,
+                    'rozklad_godzin': self._ocen_rozklad_godzin(nauczyciel, dzien, godzina)
+                }
+
+                wagi = {
+                    'obciazenie_dzienne': 0.3,
+                    'obciazenie_tygodniowe': 0.25,
+                    'specjalizacja': 0.2,
+                    'dostepnosc': 0.15,
+                    'rozklad_godzin': 0.1
+                }
+
+                wynik = sum(scoring[kryterium] * wagi[kryterium] for kryterium in scoring)
+                logger.debug(f"Wynik dla {nauczyciel.imie_nazwisko}: {wynik:.2f}")
+
+                if wynik > najlepszy_wynik:
+                    najlepszy_wynik = wynik
+                    najlepszy_nauczyciel = nauczyciel
+
+            if najlepszy_nauczyciel:
+                logger.info(f"Wybrany nauczyciel: {najlepszy_nauczyciel.imie_nazwisko} (wynik: {najlepszy_wynik:.2f})")
+                return najlepszy_nauczyciel
+            else:
+                logger.warning("Nie znaleziono żadnego dostępnego nauczyciela")
+                return None
 
         except Exception as e:
-            logger.error(f"Błąd podczas szukania nauczyciela: {e}")
+            logger.error(f"Błąd podczas szukania nauczyciela: {e}", exc_info=True)
             return None
+
+    def _policz_godziny_w_dniu(self, nauczyciel: Nauczyciel, dzien: str) -> int:
+        """Pomocnicza funkcja licząca aktualną liczbę godzin nauczyciela w danym dniu."""
+        liczba_godzin = 0
+        for plan in self.plany:
+            if dzien in plan.lekcje:
+                for godziny_lekcji in plan.lekcje[dzien].values():
+                    for lekcja in godziny_lekcji:
+                        if lekcja.nauczyciel == nauczyciel:
+                            liczba_godzin += 1
+        return liczba_godzin
+
+    def _ocen_rozklad_godzin(self, nauczyciel: Nauczyciel, dzien: str, godzina: int) -> float:
+        """
+        Ocenia jak dobrze dana godzina wpasowuje się w istniejący plan nauczyciela.
+        Zwraca wartość 0-1, gdzie 1 oznacza idealny rozklad.
+        """
+        # Zbierz wszystkie godziny nauczyciela w tym dniu
+        godziny_nauczyciela = []
+        for plan in self.plany:
+            if dzien in plan.lekcje:
+                for g, lekcje in plan.lekcje[dzien].items():
+                    for lekcja in lekcje:
+                        if lekcja.nauczyciel == nauczyciel:
+                            godziny_nauczyciela.append(g)
+
+        if not godziny_nauczyciela:
+            return 1.0  # pierwsza lekcja w dniu - dobry wynik
+
+        # Sortuj godziny
+        godziny_nauczyciela.sort()
+
+        # Sprawdź czy nowa godzina tworzy rozsądny rozkład
+        # Preferuj godziny, które nie tworzą dużych przerw
+        najmniejsza_przerwa = float('inf')
+        for g in godziny_nauczyciela:
+            przerwa = abs(g - godzina)
+            if 0 < przerwa < najmniejsza_przerwa:
+                najmniejsza_przerwa = przerwa
+
+        if najmniejsza_przerwa == float('inf'):
+            return 0.5  # neutralna ocena
+
+        # Preferuj przerwy 1-2 godziny, karz za większe przerwy
+        if najmniejsza_przerwa <= 2:
+            return 1.0 - (najmniejsza_przerwa - 1) * 0.3  # 1h przerwy = 1.0, 2h przerwy = 0.7
+        else:
+            return max(0.0, 1.0 - (najmniejsza_przerwa - 1) * 0.2)  # większe przerwy dają coraz niższą ocenę
 
     def policz_pozostale_godziny(self, plan: PlanLekcji, przedmiot: str) -> int:
         """Oblicza ile godzin danego przedmiotu zostało do przydzielenia."""
@@ -386,8 +443,7 @@ class GeneratorPlanu:
                             for lekcja in plan.lekcje[dzien][i]:
                                 grupy_str = ", ".join(g.nazwa for g in lekcja.grupy)
                                 lekcje.append(
-                                    f"{lekcja.przedmiot} ({grupy_str}) - {lekcja.nauczyciel.imie_nazwisko} - {lekcja.sala.nazwa}"
-                                )
+                                    f"{lekcja.przedmiot} ({grupy_str}) - {lekcja.nauczyciel.imie_nazwisko} - {lekcja.sala.nazwa}")
                             linia += " | ".join(lekcje)
                         f.write(linia + "\n")
             logger.info(f"Zapisano plan dla klasy {plan.klasa.rocznik}{plan.klasa.litera} do pliku {nazwa_planu}")
@@ -395,19 +451,22 @@ class GeneratorPlanu:
             logger.error(f"Błąd podczas zapisywania planu do pliku: {e}")
 
     def sprawdz_duplikaty_lekcji(self, plan: PlanLekcji, dzien: str, godzina: int, przedmiot: str,
-                                 nauczyciel: Nauczyciel, sala: Sala) -> bool:
+                                 nauczyciel: Nauczyciel, sala: Sala, grupy: List[Grupa]) -> bool:
         """Sprawdza czy nie ma duplikatów lekcji w danym terminie."""
         if dzien not in plan.lekcje or godzina not in plan.lekcje[dzien]:
             return True
 
         for lekcja in plan.lekcje[dzien][godzina]:
-            # Sprawdź czy ten sam przedmiot nie jest już w tym czasie
+            # Sprawdź czy któraś z grup nie ma już lekcji w tym czasie
+            for grupa in grupy:
+                if grupa in lekcja.grupy:
+                    return False
+
+            # Pozostałe sprawdzenia...
             if lekcja.przedmiot == przedmiot:
                 return False
-            # Sprawdź czy nauczyciel nie ma już lekcji
             if lekcja.nauczyciel == nauczyciel:
                 return False
-            # Sprawdź czy sala nie jest już zajęta
             if lekcja.sala == sala:
                 return False
         return True
@@ -416,28 +475,37 @@ class GeneratorPlanu:
         Tuple[str, int, Sala, Nauczyciel]]:
         """Znajduje wolny termin na lekcję."""
         try:
+            logger.debug(f"Szukam wolnego terminu dla przedmiotu {przedmiot} (liczba grup: {liczba_grup})")
             # Zbierz wszystkie możliwe terminy
             mozliwe_terminy = []
             for dzien in DNI_TYGODNIA:
                 # Policz aktualną liczbę lekcji w dniu
                 aktualne_lekcje = sum(1 for g in plan.lekcje.get(dzien, {}).values() for _ in g)
 
-                # Preferuj dni z mniejszą liczbą lekcji
                 if aktualne_lekcje >= 8:  # Maksymalna liczba lekcji w dniu
+                    logger.debug(f"Dzień {dzien} pominięty - za dużo lekcji ({aktualne_lekcje})")
                     continue
 
-                # Znajdź optymalną godzinę w tym dniu
                 opt_godzina = self.znajdz_optymalna_godzine(plan, dzien)
 
-                # Sprawdź wszystkie godziny, zaczynając od optymalnej
+                # Sprawdź wszystkie godziny
                 for offset in range(len(GODZINY_LEKCJI)):
                     godzina = (opt_godzina + offset) % len(GODZINY_LEKCJI)
 
                     if not self.czy_mozna_dodac_lekcje(plan, dzien, godzina, przedmiot):
+                        logger.debug(
+                            f"Termin {dzien} {GODZINY_LEKCJI[godzina][0]} niedostępny - ograniczenia przedmiotu")
                         continue
 
                     if not self.sprawdz_okienka(plan, dzien, godzina):
+                        logger.debug(f"Termin {dzien} {GODZINY_LEKCJI[godzina][0]} tworzy okienka")
                         continue
+
+                    # Określ które grupy będą miały lekcję
+                    if przedmiot in PRZEDMIOTY_DZIELONE:
+                        grupy = [plan.klasa.grupa1]  # jedna grupa na raz dla przedmiotów dzielonych
+                    else:
+                        grupy = [plan.klasa.grupa1, plan.klasa.grupa2]  # cała klasa
 
                     # Szukanie dostępnej sali
                     sale = self.znajdz_sale_dla_przedmiotu(przedmiot, liczba_grup)
@@ -447,24 +515,26 @@ class GeneratorPlanu:
 
                         # Szukanie dostępnego nauczyciela
                         nauczyciel = self.znajdz_nauczyciela_dla_przedmiotu(przedmiot, dzien, godzina)
-                        if nauczyciel and self.sprawdz_duplikaty_lekcji(plan, dzien, godzina, przedmiot, nauczyciel,
-                                                                        sala):
-                            # Oblicz priorytet dla tego terminu
+                        if nauczyciel and self.sprawdz_duplikaty_lekcji(
+                                plan, dzien, godzina, przedmiot, nauczyciel, sala, grupy  # Dodany argument grupy!
+                        ):
                             priorytet = (
                                 aktualne_lekcje,  # Preferuj dni z mniejszą liczbą lekcji
                                 abs(godzina - opt_godzina),  # Preferuj godziny bliżej optymalnej
-                                nauczyciel.przydzielone_godziny  # Preferuj nauczycieli z mniejszą liczbą godzin
+                                self.pobierz_godziny_nauczyciela(nauczyciel)  # Preferuj mniej obciążonych nauczycieli
                             )
                             mozliwe_terminy.append((priorytet, (dzien, godzina, sala, nauczyciel)))
 
-            if mozliwe_terminy:
-                # Wybierz termin z najlepszym priorytetem
-                return min(mozliwe_terminy, key=lambda x: x[0])[1]
+                if mozliwe_terminy:
+                    termin = min(mozliwe_terminy, key=lambda x: x[0])[1]
+                    logger.info(f"Znaleziono termin: {termin[0]} {GODZINY_LEKCJI[termin[1]][0]}")
+                    return termin
 
-            return None
+                logger.debug(f"Nie znaleziono terminu dla przedmiotu {przedmiot}")
+                return None
 
         except Exception as e:
-            logger.error(f"Błąd podczas szukania wolnego terminu: {e}")
+            logger.error(f"Błąd podczas szukania wolnego terminu: {e}", exc_info=True)
             return None
 
     def generuj_plan_dla_klasy(self, klasa: Klasa) -> Optional[PlanLekcji]:
@@ -493,14 +563,8 @@ class GeneratorPlanu:
                         dzien, godzina, sala, nauczyciel = termin
 
                         # Dodajemy lekcję dla pierwszej grupy
-                        lekcja_grupa1 = Lekcja(
-                            przedmiot=przedmiot,
-                            nauczyciel=nauczyciel,
-                            sala=sala,
-                            grupy=[klasa.grupa1],
-                            godzina=godzina,
-                            dzien=dzien
-                        )
+                        lekcja_grupa1 = Lekcja(przedmiot=przedmiot, nauczyciel=nauczyciel, sala=sala,
+                                               grupy=[klasa.grupa1], godzina=godzina, dzien=dzien)
                         plan.dodaj_lekcje(lekcja_grupa1)
                         self.zwieksz_godziny_nauczyciela(nauczyciel)
 
@@ -510,14 +574,8 @@ class GeneratorPlanu:
                             dzien2, godzina2, sala2, nauczyciel2 = termin2
 
                             # Dodajemy lekcję dla drugiej grupy
-                            lekcja_grupa2 = Lekcja(
-                                przedmiot=przedmiot,
-                                nauczyciel=nauczyciel2,
-                                sala=sala2,
-                                grupy=[klasa.grupa2],
-                                godzina=godzina2,
-                                dzien=dzien2
-                            )
+                            lekcja_grupa2 = Lekcja(przedmiot=przedmiot, nauczyciel=nauczyciel2, sala=sala2,
+                                                   grupy=[klasa.grupa2], godzina=godzina2, dzien=dzien2)
                             plan.dodaj_lekcje(lekcja_grupa2)
                             self.zwieksz_godziny_nauczyciela(nauczyciel)
                         else:
@@ -543,14 +601,9 @@ class GeneratorPlanu:
 
                         dzien, godzina, sala, nauczyciel = termin
 
-                        lekcja = Lekcja(
-                            przedmiot=przedmiot,
-                            nauczyciel=nauczyciel,
-                            sala=sala,
+                        lekcja = Lekcja(przedmiot=przedmiot, nauczyciel=nauczyciel, sala=sala,
                             grupy=[klasa.grupa1, klasa.grupa2],  # cała klasa
-                            godzina=godzina,
-                            dzien=dzien
-                        )
+                                        godzina=godzina, dzien=dzien)
                         plan.dodaj_lekcje(lekcja)
                         self.zwieksz_godziny_nauczyciela(nauczyciel)
                     except Exception as e:
@@ -581,11 +634,7 @@ class GeneratorPlanu:
             nieudane_klasy = []
 
             # Sortuj klasy według liczby godzin (najpierw trudniejsze przypadki)
-            posortowane_klasy = sorted(
-                self.klasy,
-                key=lambda k: GODZINY_W_TYGODNIU[k.rocznik],
-                reverse=True
-            )
+            posortowane_klasy = sorted(self.klasy, key=lambda k: GODZINY_W_TYGODNIU[k.rocznik], reverse=True)
 
             max_proby_globalne = 3  # Maksymalna liczba całkowitych restartów
             proba_globalna = 1
@@ -692,61 +741,79 @@ class GeneratorPlanu:
         return godziny
 
     def planuj_religie(self, plan: PlanLekcji) -> bool:
-        """Specjalna funkcja do planowania religii."""
+        """Specjalna funkcja do planowania religii z rozszerzonym logowaniem."""
         try:
+            logger.info(f"Rozpoczynam planowanie religii dla klasy {plan.klasa.rocznik}{plan.klasa.litera}")
             godziny_do_przydzielenia = PRZEDMIOTY_ROCZNIKI['religia'][plan.klasa.rocznik - 1]
+            logger.info(f"Potrzebne godziny religii: {godziny_do_przydzielenia}")
 
-            # Próbuj najpierw ostatnie godziny
+            # Lista kombinacji dzień-godzina do spróbowania
+            dostepne_terminy = []
+            # Najpierw ostatnie godziny
             for dzien in DNI_TYGODNIA:
-                if dzien not in plan.lekcje:
-                    plan.lekcje[dzien] = {}
-
-                # Spróbuj ostatnią godzinę
-                godzina = len(GODZINY_LEKCJI) - 1
-                sale = self.znajdz_sale_dla_przedmiotu('religia', 2)
-                for sala in sale:
-                    if self.sprawdz_dostepnosc_sali(sala, dzien, godzina):
-                        nauczyciel = self.znajdz_nauczyciela_dla_przedmiotu('religia', dzien, godzina)
-                        if nauczyciel:
-                            lekcja = Lekcja(
-                                przedmiot='religia',
-                                nauczyciel=nauczyciel,
-                                sala=sala,
-                                grupy=[plan.klasa.grupa1, plan.klasa.grupa2],
-                                godzina=godzina,
-                                dzien=dzien
-                            )
-                            plan.dodaj_lekcje(lekcja)
-                            self.zwieksz_godziny_nauczyciela(nauczyciel)  # <- ZMIANA TUTAJ
-                            godziny_do_przydzielenia -= 1
-                            if godziny_do_przydzielenia == 0:
-                                return True
-
-            # Jeśli nie udało się na końcu, spróbuj na początku dnia
+                dostepne_terminy.append((dzien, len(GODZINY_LEKCJI) - 1))
+            # Potem pierwsze godziny
             for dzien in DNI_TYGODNIA:
-                godzina = 0
-                sale = self.znajdz_sale_dla_przedmiotu('religia', 2)
-                for sala in sale:
-                    if self.sprawdz_dostepnosc_sali(sala, dzien, godzina):
-                        nauczyciel = self.znajdz_nauczyciela_dla_przedmiotu('religia', dzien, godzina)
-                        if nauczyciel:
-                            lekcja = Lekcja(
-                                przedmiot='religia',
-                                nauczyciel=nauczyciel,
-                                sala=sala,
-                                grupy=[plan.klasa.grupa1, plan.klasa.grupa2],
-                                godzina=godzina,
-                                dzien=dzien
-                            )
-                            plan.dodaj_lekcje(lekcja)
-                            self.zwieksz_godziny_nauczyciela(nauczyciel)  # <- ZMIANA TUTAJ
-                            godziny_do_przydzielenia -= 1
-                            if godziny_do_przydzielenia == 0:
-                                return True
+                dostepne_terminy.append((dzien, 0))
 
-            return godziny_do_przydzielenia == 0
+            przydzielone = 0
+            for dzien, godzina in dostepne_terminy:
+                if przydzielone >= godziny_do_przydzielenia:
+                    break
+
+                logger.debug(f"Próbuję zaplanować religię w terminie: {dzien} {GODZINY_LEKCJI[godzina][0]}")
+
+                # Znajdź salę
+                sale = self.znajdz_sale_dla_przedmiotu('religia', 2)
+                if not sale:
+                    logger.warning(f"Brak dostępnych sal w terminie {dzien} {GODZINY_LEKCJI[godzina][0]}")
+                    continue
+
+                for sala in sale:
+                    if not self.sprawdz_dostepnosc_sali(sala, dzien, godzina):
+                        logger.debug(f"Sala {sala.nazwa} niedostępna")
+                        continue
+
+                    # Sprawdź czy grupy nie mają już lekcji
+                    if not self.sprawdz_duplikaty_lekcji(
+                            plan, dzien, godzina, 'religia', None, sala,
+                            [plan.klasa.grupa1, plan.klasa.grupa2]
+                    ):
+                        logger.debug(f"Termin {dzien} {GODZINY_LEKCJI[godzina][0]} zajęty przez inne lekcje")
+                        continue
+
+                    # Znajdź nauczyciela
+                    nauczyciel = self.znajdz_nauczyciela_dla_przedmiotu('religia', dzien, godzina)
+                    if not nauczyciel:
+                        logger.debug(f"Nie znaleziono nauczyciela dla terminu {dzien} {GODZINY_LEKCJI[godzina][0]}")
+                        continue
+
+                    # Wszystkie warunki spełnione - dodaj lekcję
+                    lekcja = Lekcja(
+                        przedmiot='religia',
+                        nauczyciel=nauczyciel,
+                        sala=sala,
+                        grupy=[plan.klasa.grupa1, plan.klasa.grupa2],
+                        godzina=godzina,
+                        dzien=dzien
+                    )
+                    plan.dodaj_lekcje(lekcja)
+                    self.zwieksz_godziny_nauczyciela(nauczyciel)
+                    przydzielone += 1
+                    logger.info(f"Zaplanowano lekcję religii: {dzien} {GODZINY_LEKCJI[godzina][0]} "
+                                f"(nauczyciel: {nauczyciel.imie_nazwisko}, sala: {sala.nazwa})")
+                    break  # Przejdź do następnego terminu po sukcesie
+
+            if przydzielone < godziny_do_przydzielenia:
+                logger.error(f"Nie udało się zaplanować wszystkich godzin religii. "
+                             f"Zaplanowano {przydzielone}/{godziny_do_przydzielenia}")
+                return False
+
+            logger.info(f"Pomyślnie zaplanowano wszystkie godziny religii ({przydzielone})")
+            return True
+
         except Exception as e:
-            logger.error(f"Błąd podczas planowania religii: {e}")
+            logger.error(f"Błąd podczas planowania religii: {e}", exc_info=True)
             return False
 
 
