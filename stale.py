@@ -1,17 +1,18 @@
 from enum import Enum, auto
-from typing import Dict
+from typing import Dict, Tuple, Set, List
 
 
 class TypSali(Enum):
-    ZWYKLA = auto()
-    INFORMATYCZNA = auto()
-    SILOWNIA = auto()
-    MALA_SALA_GIM = auto()
-    DUZA_HALA = auto()
+    """Typy sal dostępnych w szkole"""
+    ZWYKLA = auto()  # Sala na zwykłe przedmioty (26 sal)
+    INFORMATYCZNA = auto()  # Sala komputerowa (2 sale)
+    SILOWNIA = auto()  # Sala do WF (1 sala - 1 grupa)
+    MALA_SALA_GIM = auto()  # Sala do WF (1 sala - 3 grupy)
+    DUZA_HALA = auto()  # Sala do WF (1 sala - 6 grup)
 
 
-# Czasy lekcji i przerw
-GODZINY_LEKCJI = [
+# Godziny lekcyjne w formacie (początek, koniec)
+GODZINY_LEKCJI: List[Tuple[str, str]] = [
     ("08:00", "08:45"),  # 1 lekcja
     ("08:50", "09:35"),  # 2 lekcja
     ("09:45", "10:30"),  # 3 lekcja
@@ -23,55 +24,80 @@ GODZINY_LEKCJI = [
     ("15:30", "16:15")  # 9 lekcja
 ]
 
-DNI_TYGODNIA = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek']
+DNI_TYGODNIA: List[str] = [
+    'Poniedziałek',
+    'Wtorek',
+    'Środa',
+    'Czwartek',
+    'Piątek'
+]
 
-# Przedmioty i ich tygodniowy wymiar godzin dla różnych roczników
-PRZEDMIOTY_ROCZNIKI = {
-    # (liczba_godzin_1kl, liczba_godzin_2kl, liczba_godzin_3kl, liczba_godzin_4kl)
+# Przedmioty i ich wymiar godzinowy tygodniowo dla każdego rocznika
+# Format: (1kl, 2kl, 3kl, 4kl)
+PRZEDMIOTY_ROCZNIKI: Dict[str, Tuple[int, int, int, int]] = {
+    # Przedmioty dla całej klasy
     'polski': (4, 4, 4, 4),
     'matematyka': (4, 4, 4, 3),
-    'angielski': (3, 3, 3, 3),  # grupy
     'niemiecki': (2, 2, 2, 2),
     'francuski': (2, 2, 2, 2),
     'hiszpański': (2, 2, 2, 2),
     'fizyka': (1, 2, 2, 2),
-    'informatyka': (1, 1, 1, 1),  # grupy
     'biologia': (1, 2, 2, 1),
     'chemia': (1, 2, 2, 1),
     'historia': (2, 2, 2, 2),
-    'WF': (3, 3, 3, 3),  # grupy
     'HiT': (1, 1, 0, 0),
     'przedsiębiorczość': (0, 1, 1, 0),
-    'religia': (2, 2, 2, 2)
+    'religia': (1, 1, 1, 1),
+
+    # Przedmioty dzielone na grupy
+    'angielski': (3, 3, 3, 3),
+    'informatyka': (1, 1, 1, 1),
+    'WF': (3, 3, 3, 3)
 }
 
 # Łączna liczba godzin tygodniowo dla każdego rocznika
-GODZINY_W_TYGODNIU = {
-    1: 25,
-    2: 32,
-    3: 35,
-    4: 28
+GODZINY_W_TYGODNIU: Dict[int, int] = {
+    1: 25,  # Pierwsze klasy
+    2: 32,  # Drugie klasy
+    3: 35,  # Trzecie klasy
+    4: 28  # Czwarte klasy
 }
 
-# Przedmioty dzielone na grupy
-PRZEDMIOTY_DZIELONE = {'angielski', 'informatyka', 'WF'}
+# Zbiory przedmiotów ze specjalnymi wymaganiami
+PRZEDMIOTY_DZIELONE: Set[str] = {
+    'angielski',
+    'informatyka',
+    'WF'
+}
 
-# Ograniczenia dla przedmiotów
-PRZEDMIOTY_PIERWSZE_OSTATNIE = {'religia'}  # tylko na początku lub końcu dnia
-PRZEDMIOTY_BEZ_PIERWSZYCH_OSTATNICH = {'matematyka', 'fizyka'}  # nie mogą być na początku/końcu
-PRZEDMIOTY_POD_RAD = {'matematyka', 'polski', 'informatyka'}  # maks 2h pod rząd
+PRZEDMIOTY_PIERWSZE_OSTATNIE: Set[str] = {
+    'religia'  # Musi być bezpośrednio przed pierwszą lub po ostatniej lekcji klasy
+}
+
+PRZEDMIOTY_BEZ_PIERWSZYCH_OSTATNICH: Set[str] = {
+    'matematyka',
+    'fizyka'
+}
+
+PRZEDMIOTY_POD_RZAD: Set[str] = {
+    'matematyka',  # maks 2h
+    'polski',  # maks 2h
+    'informatyka'  # maks 2h
+}
 
 
 def oblicz_potrzebne_godziny() -> Dict[str, int]:
-    """Oblicza całkowitą liczbę godzin tygodniowo potrzebną dla każdego przedmiotu."""
+    """
+    Oblicza całkowitą liczbę godzin tygodniowo potrzebną dla każdego przedmiotu.
+    Uwzględnia liczebność klas (5 w każdym roczniku) i podział na grupy.
+    """
     potrzebne_godziny = {}
 
-    for przedmiot, godziny in PRZEDMIOTY_ROCZNIKI.items():
-        suma_godzin = sum(godziny) * 5  # 5 klas w każdym roczniku
+    for przedmiot, wymiar in PRZEDMIOTY_ROCZNIKI.items():
+        suma_godzin = sum(wymiar) * 5  # 5 klas w każdym roczniku
 
-        # Dla przedmiotów dzielonych na grupy, potrzebujemy dwa razy więcej godzin
         if przedmiot in PRZEDMIOTY_DZIELONE:
-            suma_godzin *= 2
+            suma_godzin *= 2  # Przedmioty dzielone potrzebują 2x więcej godzin
 
         potrzebne_godziny[przedmiot] = suma_godzin
 
@@ -79,8 +105,8 @@ def oblicz_potrzebne_godziny() -> Dict[str, int]:
 
 
 if __name__ == "__main__":
-    # Test obliczania potrzebnych godzin
+    # Test - wyświetl potrzebną liczbę godzin dla każdego przedmiotu
     godziny = oblicz_potrzebne_godziny()
     print("\nPotrzebne godziny tygodniowo dla każdego przedmiotu:")
-    for przedmiot, liczba_godzin in godziny.items():
+    for przedmiot, liczba_godzin in sorted(godziny.items()):
         print(f"{przedmiot}: {liczba_godzin}h")
