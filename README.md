@@ -119,9 +119,10 @@ WF:
 ### Szczególne Wymagania Przedmiotów
 
 1. Religia:
-   - Musi być pierwszą LUB ostatnią lekcją w danym dniu dla całej klasy
-   - Przykład 1: jeśli klasa ma lekcje 1-6, religia może być na 1. lub 6. lekcji
-   - Przykład 2: jeśli klasa kończy o 13:40, religia nie może być o 15:30
+   - W danym dniu religia musi być bezpośrednio przed pierwszą lub po ostatniej lekcji klasy
+   - Przykład 1: jeśli klasa ma lekcje 2-6, religia może być na 1. lub 7. lekcji
+   - Przykład 2: jeśli klasa kończy lekcje o 13:40 (6. lekcja), religia może być o 12:55 (przed) lub 13:50 (po)
+   - Przykład 3: BŁĄD - religia o 15:30, gdy ostatnia lekcja klasy kończy się o 13:40
 
 2. Matematyka i fizyka:
    - Nie mogą być pierwszą ani ostatnią lekcją w planie klasy danego dnia
