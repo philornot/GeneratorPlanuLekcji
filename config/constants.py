@@ -16,41 +16,38 @@ HOURS = [
 
 # Liczba godzin tygodniowo dla każdego rocznika
 WEEKLY_HOURS: Dict[int, int] = {
-    1: 25,
-    2: 32,
-    3: 35,
-    4: 28
+    1: 31,  # Minimum z "31–35 + 3"
+    2: 35,  # Maksimum z "31–35 + 3"
+    3: 31,  # Minimum z "31 + 3"
+    4: 24  # Maksimum z "24 + 2"
 }
 
 # Przedmioty dla całej klasy
 REGULAR_SUBJECTS: Dict[str, Dict[int, int]] = {
     'Polski': {1: 4, 2: 4, 3: 4, 4: 4},
-    'Matematyka': {1: 4, 2: 4, 3: 4, 4: 3},
-    'Niemiecki': {1: 2, 2: 2, 3: 2, 4: 2},
-    'Francuski': {1: 2, 2: 2, 3: 2, 4: 2},
-    'Hiszpański': {1: 2, 2: 2, 3: 2, 4: 2},
-    'Fizyka': {1: 1, 2: 2, 3: 2, 4: 2},
-    'Biologia': {1: 1, 2: 2, 3: 2, 4: 1},
-    'Chemia': {1: 1, 2: 2, 3: 2, 4: 1},
-    'Historia': {1: 2, 2: 2, 3: 2, 4: 2},
+    'Matematyka': {1: 4, 2: 4, 3: 4, 4: 4},
+    'Język obcy nowożytny': {1: 3, 2: 3, 3: 3, 4: 2},
+    'Drugi język obcy': {1: 2, 2: 2, 3: 2, 4: 2},
+    'Historia': {1: 2, 2: 2, 3: 2, 4: 1},
     'HiT': {1: 1, 2: 1, 3: 0, 4: 0},
+    'Biologia': {1: 1, 2: 1, 3: 1, 4: 1},
+    'Chemia': {1: 1, 2: 1, 3: 1, 4: 1},
+    'Fizyka': {1: 1, 2: 1, 3: 1, 4: 1},
+    'Geografia': {1: 1, 2: 1, 3: 0, 4: 0},
     'Przedsiębiorczość': {1: 0, 2: 1, 3: 1, 4: 0},
-    'Religia': {1: 1, 2: 1, 3: 1, 4: 1}
+    'Informatyka': {1: 1, 2: 1, 3: 0, 4: 0},
+    'Wychowanie fizyczne': {1: 3, 2: 3, 3: 3, 4: 3},
+    'Edukacja dla bezpieczeństwa': {1: 0, 2: 0, 3: 1, 4: 0},
+    'Zajęcia z wychowawcą': {1: 1, 2: 1, 3: 1, 4: 1},
+    'Religia/Etyka': {1: 2, 2: 2, 3: 2, 4: 2}
 }
 
-# Przedmioty dzielone na grupy
-SPLIT_SUBJECTS: Dict[str, Dict[int, int]] = {
-    'Angielski': {1: 3, 2: 3, 3: 3, 4: 3},
-    'Informatyka': {1: 1, 2: 1, 3: 1, 4: 1},
-    'WF': {1: 3, 2: 3, 3: 3, 4: 3}
-}
-
-# Przedmioty z ograniczeniem godzin pod rząd
+# Przedmioty z ograniczeniem godzin z rzędu
 MAX_CONSECUTIVE_HOURS: Dict[str, int] = {
     'Matematyka': 2,
     'Polski': 2,
     'Informatyka': 2,
-    'WF': 1
+    'Wychowanie fizyczne': 1
 }
 
 # Przedmioty, które nie mogą być pierwsze ani ostatnie
@@ -69,5 +66,6 @@ GYM_ROOMS: Dict[str, int] = {
 RELATED_SUBJECTS: List[Set[str]] = [
     {'Matematyka', 'Fizyka'},
     {'Biologia', 'Chemia'},
-    # można dodać więcej par
+    {'Geografia', 'Biologia'},
+    {'Język obcy nowożytny', 'Drugi język obcy'}
 ]

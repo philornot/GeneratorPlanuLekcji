@@ -88,8 +88,6 @@ class SchedulePDFGenerator:
                     cell_content.append('-')
                 else:
                     for lesson in lessons:
-                        if lesson.group:
-                            cell_content.append(f"Gr.{lesson.group}:")
                         cell_content.append(f"{lesson.subject}")
                         cell_content.append(f"s.{lesson.room_id}")
 
@@ -132,13 +130,13 @@ class SchedulePDFGenerator:
 
         story = []
 
-        # Pierwsza strona - statystyki
+        # Pierwsza strona — statystyki
         self._create_title_page(story, schedule, generation_time, execution_time, iterations)
 
-        # Kolejne strony - plany lekcji dla każdej klasy
+        # Kolejne strony — plany lekcji dla każdej klasy
         for class_name, school_class in sorted(schedule.classes.items()):
             story.append(Paragraph(f"Plan lekcji - Klasa {class_name}", self.styles['ClassHeader']))
-            story.append(  # todo: wychowawca nie jest przypisywany?
+            story.append(
                 Paragraph(f"Wychowawca: {school_class.class_teacher_id} | Sala wychowawcza: {school_class.home_room}",
                           self.styles['SubHeader']))
             story.append(Spacer(1, 0.2 * inch))

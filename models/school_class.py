@@ -1,6 +1,7 @@
 # models/school_class.py
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional
+from typing import Dict, List
+
 from .lesson import Lesson
 
 
@@ -21,10 +22,10 @@ class SchoolClass:
     def required_hours(self) -> int:
         """Zwraca wymaganą liczbę godzin tygodniowo"""
         hours_per_year = {
-            1: 25,
-            2: 32,
-            3: 35,
-            4: 28
+            1: 31,
+            2: 35,
+            3: 31,
+            4: 24
         }
         return hours_per_year[self.year]
 
@@ -51,19 +52,9 @@ class SchoolClass:
         """Zwraca godziny lekcyjne w danym dniu (bez religii)"""
         hours = []
         for hour in range(1, 10):
-            lessons = [l for l in self.schedule[day][hour] if l.subject != 'Religia']
+            lessons = [l for l in self.schedule[day][hour] if l.subject != 'Religia/Etyka']
             if lessons:
                 hours.append(hour)
-        return hours
-
-    def get_group_hours(self, day: int, group: Optional[int]) -> List[int]:
-        """Zwraca godziny lekcyjne dla danej grupy w danym dniu"""
-        hours = []
-        for hour in range(1, 10):
-            for lesson in self.schedule[day][hour]:
-                if lesson.group == group or lesson.group is None:
-                    hours.append(hour)
-                    break
         return hours
 
     def get_subject_hours(self, subject: str) -> int:
@@ -88,14 +79,13 @@ class SchoolClass:
             elif len(hours) > 8:
                 errors.append(f"Dzień {day}: za dużo lekcji (maksimum 8)")
 
-        # Sprawdź ciągłość zajęć dla każdej grupy
+        # Sprawdź ciągłość zajęć (brak okienek)
         for day in range(5):
-            for group in [1, 2]:
-                hours = self.get_group_hours(day, group)
-                if hours:
-                    for i in range(min(hours), max(hours)):
-                        if i not in hours:
-                            errors.append(f"Dzień {day}, grupa {group}: okienko na lekcji {i}")
+            hours = self.get_day_hours(day)
+            if hours:
+                for i in range(min(hours), max(hours)):
+                    if i not in hours:
+                        errors.append(f"Dzień {day}: okienko na lekcji {i}")
 
         # Sprawdź ograniczenia przedmiotów
         restricted_subjects = {'Matematyka', 'Fizyka'}
@@ -117,7 +107,7 @@ class SchoolClass:
             'Matematyka': 2,
             'Polski': 2,
             'Informatyka': 2,
-            'WF': 1
+            'Wychowanie fizyczne': 1
         }
         for day in range(5):
             for subject, max_hours in max_consecutive.items():
@@ -133,47 +123,3 @@ class SchoolClass:
                         consecutive = 0
 
         return errors
-
-    def calculate_schedule_score(self) -> float:
-        """Oblicza punktację dla planu lekcji (0-100)"""
-        score = 100.0
-
-        # Kary za rozpoczynanie/kończenie o nieergonomicznych godzinach
-        for day in range(5):
-            hours = self.get_day_hours(day)
-            if hours:
-                if min(hours) == 1:  # Rozpoczęcie o 8:00
-                    score -= 2
-                if max(hours) >= 8:  # Kończenie po 14:40
-                    score -= 3 * (max(hours) - 7)
-
-        # Kary za nierównomierne rozłożenie "ciężkich" przedmiotów
-        heavy_subjects = {'Matematyka', 'Fizyka', 'Chemia'}
-        for day in range(5):
-            heavy_count = sum(
-                1 for hour in range(1, 10)
-                for lesson in self.schedule[day][hour]
-                if lesson.subject in heavy_subjects
-            )
-            if heavy_count > 2:
-                score -= (heavy_count - 2) * 5
-
-        return max(0, score)
-
-    def to_dict(self) -> dict:
-        """Konwertuje klasę do słownika (np. dla szablonu HTML)"""
-        return {
-            'name': self.name,
-            'year': self.year,
-            'home_room': self.home_room,
-            'class_teacher_id': self.class_teacher_id,
-            'students_count': self.students_count,
-            'schedule': {
-                day: {
-                    hour: [lesson.to_dict() for lesson in lessons]
-                    for hour, lessons in hours.items()
-                }
-                for day, hours in self.schedule.items()
-            },
-            'score': self.calculate_schedule_score()
-        }

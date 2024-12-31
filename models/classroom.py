@@ -9,7 +9,7 @@ from .lesson import Lesson
 class Classroom:
     """Reprezentuje salę lekcyjną"""
     room_id: str
-    capacity: int  # Liczba grup, które mogą mieć jednocześnie zajęcia
+    capacity: int  # Liczba klas, które mogą mieć jednocześnie zajęcia
     allowed_subjects: Set[str]
     floor: int
     schedule: Dict[int, Dict[int, List[Lesson]]] = field(default_factory=lambda: {
@@ -22,10 +22,14 @@ class Classroom:
         """Tworzy zwykłą salę lekcyjną"""
         return cls(
             room_id=str(number),
-            capacity=2,  # Mieści całą klasę (dwie grupy)
-            allowed_subjects={subj for subj in {'Polski', 'Matematyka', 'Niemiecki',
-                                                'Francuski', 'Hiszpański', 'Fizyka', 'Biologia', 'Chemia',
-                                                'Historia', 'HiT', 'Przedsiębiorczość', 'Religia', 'Angielski'}},
+            capacity=1,  # Mieści jedną klasę
+            allowed_subjects={
+                'Polski', 'Matematyka', 'Język obcy nowożytny',
+                'Drugi język obcy', 'Historia', 'HiT', 'Biologia',
+                'Chemia', 'Fizyka', 'Geografia', 'Przedsiębiorczość',
+                'Religia/Etyka', 'Zajęcia z wychowawcą',
+                'Edukacja dla bezpieczeństwa'
+            },
             floor=(number - 1) // 10  # Zakładamy, że numery sal odpowiadają piętrom
         )
 
@@ -34,7 +38,7 @@ class Classroom:
         """Tworzy salę komputerową"""
         return cls(
             room_id=str(number),
-            capacity=1,  # Mieści jedną grupę
+            capacity=1,  # Mieści jedną klasę
             allowed_subjects={'Informatyka'},
             floor=(number - 1) // 10
         )
@@ -45,38 +49,31 @@ class Classroom:
         if room_type == 'SILOWNIA':
             capacity = 1
         elif room_type == 'MALA_SALA':
-            capacity = 3
+            capacity = 2
         elif room_type == 'DUZA_HALA':
-            capacity = 6
+            capacity = 3
         else:
             raise ValueError(f"Nieznany typ sali gimnastycznej: {room_type}")
 
         return cls(
             room_id=room_type,
             capacity=capacity,
-            allowed_subjects={'WF'},
+            allowed_subjects={'Wychowanie fizyczne'},
             floor=0  # Zakładamy, że wszystkie sale gimnastyczne są na parterze
         )
 
     def can_accommodate(self, lesson: Lesson) -> bool:
-        """Sprawdza czy sala może pomieścić daną lekcję"""
-        # Sprawdź czy przedmiot jest dozwolony w tej sali
+        """Sprawdza, czy sala może pomieścić daną lekcję"""
+        # Sprawdź, czy przedmiot jest dozwolony w tej sali
         if lesson.subject not in self.allowed_subjects:
             return False
 
         # Pobierz aktualnie zaplanowane lekcje na daną godzinę
         current_lessons = self.schedule[lesson.day][lesson.hour]
 
-        # Sprawdź czy jest miejsce w sali
+        # Sprawdź, czy jest miejsce w sali
         if len(current_lessons) >= self.capacity:
             return False
-
-        # Dla WF sprawdź specjalne reguły
-        if lesson.subject == 'WF' and self.room_id in {'MALA_SALA', 'DUZA_HALA'}:
-            # Dozwolone więcej grup jednocześnie
-            current_groups = sum(1 for l in current_lessons if l.group is not None)
-            if current_groups >= self.capacity:
-                return False
 
         return True
 
@@ -105,7 +102,7 @@ class Classroom:
         return (occupied_slots / 9) * 100
 
     def is_available(self, day: int, hour: int) -> bool:
-        """Sprawdza czy sala jest dostępna w danym terminie"""
+        """Sprawdza, czy sala jest dostępna w danym terminie"""
         return len(self.schedule[day][hour]) < self.capacity
 
     def get_room_type(self) -> str:

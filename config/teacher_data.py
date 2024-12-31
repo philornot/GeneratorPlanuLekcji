@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from config import REGULAR_SUBJECTS, SPLIT_SUBJECTS
+from config import REGULAR_SUBJECTS
 
 # Najpopularniejsze polskie imiona
 FIRST_NAMES = {
@@ -59,22 +59,20 @@ class TeacherDataGenerator:
                 else:
                     requirements[subject].weekly_hours += year_hours
 
-            # Split subjects (multiply by 2 for groups)
-            for subject, hours_per_year in SPLIT_SUBJECTS.items():
-                year_hours = hours_per_year.get(year, 0) * classes_in_year * 2
-                if subject not in requirements:
-                    requirements[subject] = SubjectRequirement(year_hours)
-                else:
-                    requirements[subject].weekly_hours += year_hours
-
         # Set special requirements for certain subjects
-        if 'WF' in requirements:
-            requirements['WF'].max_hours_per_teacher = 24
-            requirements['WF'].min_teachers = 4  # Minimum due to gender separation
+        if 'Wychowanie fizyczne' in requirements:
+            requirements['Wychowanie fizyczne'].max_hours_per_teacher = 24
+            requirements['Wychowanie fizyczne'].min_teachers = 4  # Minimum due to gender separation
 
         if 'Informatyka' in requirements:
             requirements['Informatyka'].max_hours_per_teacher = 20
             requirements['Informatyka'].min_teachers = 2  # Due to computer lab constraints
+
+        if 'Język obcy nowożytny' in requirements:
+            requirements['Język obcy nowożytny'].min_teachers = 3  # Multiple language options
+
+        if 'Drugi język obcy' in requirements:
+            requirements['Drugi język obcy'].min_teachers = 3  # Multiple language options
 
         return requirements
 
@@ -135,17 +133,26 @@ class TeacherDataGenerator:
 
     @staticmethod
     def _assign_secondary_subjects(teachers: List[Dict]):
-        all_subjects = set(REGULAR_SUBJECTS.keys()) | set(SPLIT_SUBJECTS.keys())
+        SUBJECT_PAIRS = [
+            {'Matematyka', 'Fizyka'},
+            {'Biologia', 'Chemia'},
+            {'Geografia', 'Biologia'},
+            {'Język obcy nowożytny', 'Drugi język obcy'}
+        ]
 
         for teacher in teachers:
             if teacher['is_full_time'] and len(teacher['subjects']) == 1:
                 main_subject = next(iter(teacher['subjects']))
-                available_subjects = list(all_subjects - {main_subject})
-                if available_subjects and random.random() < 0.3:  # 30% szans na drugi przedmiot
-                    second_subject = random.choice(available_subjects)
+
+                # Find valid pairs for this subject
+                valid_pairs = [pair for pair in SUBJECT_PAIRS
+                               if main_subject in pair]
+
+                if valid_pairs and random.random() < 0.3:  # 30% chance for second subject
+                    chosen_pair = random.choice(valid_pairs)
+                    second_subject = next(iter(chosen_pair - {main_subject}))
                     teacher['subjects'].add(second_subject)
 
-    # Previous helper methods remain unchanged
     @staticmethod
     def generate_teacher_name() -> Tuple[str, str]:
         """Generuje losowe imię i nazwisko nauczyciela"""

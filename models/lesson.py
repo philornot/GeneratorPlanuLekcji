@@ -1,9 +1,8 @@
 # models/lesson.py
 from dataclasses import dataclass
-from typing import Optional
 
 
-@dataclass(frozen=True)  # Dodaj frozen=True aby klasa była immutable
+@dataclass(frozen=True)
 class Lesson:
     """Reprezentuje pojedynczą lekcję w planie"""
     subject: str
@@ -11,17 +10,12 @@ class Lesson:
     room_id: str
     day: int  # 0-4 (pon-pt)
     hour: int  # 1-9
-    group: Optional[int] = None  # None dla całej klasy, 1 lub 2 dla grup
-    class_name: str = ''  # np. "1A", "2B" itp.
+    class_name: str  # np. "1A", "2B" itp.
 
     def __hash__(self):
         """Implementacja hash dla możliwości użycia w set()"""
         return hash((self.subject, self.teacher_id, self.room_id,
-                     self.day, self.hour, self.group, self.class_name))
-
-    def is_split_subject(self) -> bool:
-        """Sprawdza czy przedmiot jest dzielony na grupy"""
-        return self.subject in {'Angielski', 'Informatyka', 'WF'}
+                     self.day, self.hour, self.class_name))
 
     def conflicts_with(self, other: 'Lesson') -> bool:
         """Sprawdza czy lekcja koliduje z inną lekcją"""
@@ -35,26 +29,24 @@ class Lesson:
 
         # Ta sama sala (chyba że to sala WF)
         if (self.room_id == other.room_id and
-                not (self.subject == 'WF' and self.room_id in {'DUZA_HALA', 'MALA_SALA'})):
+                not (self.subject == 'Wychowanie fizyczne' and
+                     self.room_id in {'DUZA_HALA', 'MALA_SALA'})):
             return True
 
-        # Ta sama klasa i grupa (lub cała klasa)
+        # Ta sama klasa
         if self.class_name == other.class_name:
-            if self.group is None or other.group is None:
-                return True
-            if self.group == other.group:
-                return True
+            return True
 
         return False
 
     def validate_room(self) -> bool:
-        """Sprawdza czy sala jest odpowiednia dla przedmiotu"""
+        """Sprawdza, czy sala jest odpowiednia dla przedmiotu"""
         if self.subject == 'Informatyka':
             return self.room_id in {'14', '24'}
-        elif self.subject == 'WF':
+        elif self.subject == 'Wychowanie fizyczne':
             return self.room_id in {'SILOWNIA', 'MALA_SALA', 'DUZA_HALA'}
         else:
-            # Dla pozostałych przedmiotów - zwykłe sale (1-28, bez 14 i 24)
+            # Dla pozostałych przedmiotów — zwykłe sale (1-28, bez 14 i 24)
             try:
                 room_num = int(self.room_id)
                 return (1 <= room_num <= 28 and
@@ -71,7 +63,5 @@ class Lesson:
             'room_id': self.room_id,
             'day': self.day,
             'hour': self.hour,
-            'group': self.group,
-            'class_name': self.class_name,
-            'is_split': self.is_split_subject()
+            'class_name': self.class_name
         }

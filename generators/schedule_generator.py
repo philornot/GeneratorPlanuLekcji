@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 
+from config.constants import REGULAR_SUBJECTS
 from models.classroom import Classroom
 from models.lesson import Lesson
 from models.room_optimizer import znajdz_optymalna_sale
@@ -171,76 +172,61 @@ class ScheduleGenerator:
 
     def _assign_random_lessons(self, schedule: Schedule):
         """Przydziela lekcje losowo do planu"""
-        # Najpierw przydzielamy przedmioty dzielone na grupy, bo są trudniejsze
         for class_name, school_class in schedule.classes.items():
-            split_subjects = {'Angielski': 3, 'Informatyka': 1, 'WF': 3}
-            for subject, hours in split_subjects.items():
-                # Przydziel obie grupy w tym samym czasie
-                for _ in range(hours):
-                    for _ in range(self.config.retry_count * 2):  # Więcej prób
-                        day = random.randint(0, 4)
-                        hour = random.randint(1, 9)
-
-                        # Próbuj przydzielić obie grupy jednocześnie
-                        lesson1 = self._create_lesson(subject, class_name, day, hour, schedule, 1)
-                        lesson2 = self._create_lesson(subject, class_name, day, hour, schedule, 2)
-
-                        if lesson1 and lesson2:
-                            if schedule.add_lesson(lesson1) and schedule.add_lesson(lesson2):
-                                break
-
-            # Następnie przedmioty dla całej klasy
             required_subjects = self._get_required_subjects(school_class)
-            for subject, hours in required_subjects.items():
-                if subject not in split_subjects:
-                    hours_per_day = 2 if subject in {'Polski', 'Matematyka'} else 1
-                    days = list(range(5))
-                    random.shuffle(days)
 
-                    lessons_assigned = 0
-                    for day in days:
-                        for _ in range(hours_per_day):
-                            if lessons_assigned >= hours:
+            # Sortuj przedmioty według priorytetów
+            priority_subjects = {
+                'Matematyka': 3,
+                'Polski': 3,
+                'Wychowanie fizyczne': 2,
+                'Język obcy nowożytny': 2
+            }
+
+            sorted_subjects = sorted(
+                required_subjects.items(),
+                key=lambda x: (priority_subjects.get(x[0], 1), x[1]),
+                reverse=True
+            )
+
+            # Przydziel wszystkie przedmioty
+            for subject, hours in sorted_subjects:
+                hours_per_day = min(2, hours) if subject in {'Matematyka', 'Polski'} else 1
+                days = list(range(5))
+                random.shuffle(days)
+
+                lessons_assigned = 0
+                for day in days:
+                    for _ in range(hours_per_day):
+                        if lessons_assigned >= hours:
+                            break
+
+                        for _ in range(self.config.retry_count):
+                            if subject in {'Matematyka', 'Fizyka'}:
+                                hour = random.randint(2, 7)  # Nie pierwsze/ostatnie
+                            else:
+                                hour = random.randint(1, 8)
+
+                            lesson = self._create_lesson(subject, class_name, day, hour, schedule)
+                            if lesson and schedule.add_lesson(lesson):
+                                lessons_assigned += 1
                                 break
-
-                            for _ in range(self.config.retry_count):
-                                if subject in {'Matematyka', 'Fizyka'}:
-                                    hour = random.randint(2, 7)  # Nie pierwsze/ostatnie
-                                else:
-                                    hour = random.randint(1, 8)
-
-                                lesson = self._create_lesson(subject, class_name, day, hour, schedule)
-                                if lesson and schedule.add_lesson(lesson):
-                                    lessons_assigned += 1
-                                    break
 
     @staticmethod
     def _get_required_subjects(school_class: SchoolClass) -> Dict[str, int]:
         """Zwraca wymagane przedmioty i ich wymiar godzinowy dla klasy"""
         year = school_class.year
-        subjects = {
-            'Polski': 4,
-            'Matematyka': 4 if year != 4 else 3,
-            'Angielski': 3,
-            'Niemiecki': 2,
-            'Fizyka': 1 if year == 1 else 2,
-            'Biologia': 1 if year == 1 else (2 if year in {2, 3} else 1),
-            'Chemia': 1 if year == 1 else (2 if year in {2, 3} else 1),
-            'Historia': 2,
-            'WF': 3,
-            'Informatyka': 1
-        }
+        subjects = {}
 
-        # Dodaj przedmioty specyficzne dla roczników
-        if year in {1, 2}:
-            subjects['HiT'] = 1
-        if year in {2, 3}:
-            subjects['Przedsiębiorczość'] = 1
+        for subject, hours_per_year in REGULAR_SUBJECTS.items():
+            if hours_per_year[year] > 0:
+                subjects[subject] = hours_per_year[year]
 
         return subjects
 
     def _create_lesson(self, subject: str, class_name: str, day: int, hour: int,
-                       schedule: Schedule, group: Optional[int] = None) -> Optional[Lesson]:
+                       schedule: Schedule) -> Optional[Lesson]:
+        """Tworzy nową lekcję"""
         available_teachers = [
             teacher_id for teacher_id, teacher in schedule.teachers.items()
             if (subject in teacher.subjects and
@@ -252,15 +238,14 @@ class ScheduleGenerator:
 
         teacher_id = random.choice(available_teachers)
 
-        # Użyj nowej metody znajdowania optymalnej sali
+        # Znajdź optymalną salę
         room_id = znajdz_optymalna_sale(schedule, Lesson(
             subject=subject,
             teacher_id=teacher_id,
             room_id="",  # Tymczasowa wartość
             day=day,
             hour=hour,
-            class_name=class_name,
-            group=group
+            class_name=class_name
         ))
 
         if not room_id:
@@ -272,8 +257,7 @@ class ScheduleGenerator:
             room_id=room_id,
             day=day,
             hour=hour,
-            class_name=class_name,
-            group=group
+            class_name=class_name
         )
 
     def _select_parent(self, scored_population: List[Tuple[Schedule, float]]) -> Schedule:
@@ -319,12 +303,11 @@ class ScheduleGenerator:
 
             # Sprawdź okienka (-10 punktów za każde)
             for day in range(5):
-                for group in [1, 2]:
-                    hours = school_class.get_group_hours(day, group)
-                    if hours:
-                        for i in range(min(hours), max(hours)):
-                            if i not in hours:
-                                score -= 10
+                hours = school_class.get_day_hours(day)
+                if hours:
+                    for i in range(min(hours), max(hours)):
+                        if i not in hours:
+                            score -= 10
 
             # Sprawdź liczbę lekcji dziennie (-20 punktów za złą liczbę)
             for day in range(5):
@@ -417,7 +400,6 @@ class ScheduleGenerator:
                 day=new_day,
                 hour=new_hour,
                 schedule=schedule,
-                group=lesson.group
             )
 
             if new_lesson and schedule.add_lesson(new_lesson):

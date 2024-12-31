@@ -1,6 +1,5 @@
 # models/room_optimizer.py
 from typing import Optional
-
 from .lesson import Lesson
 from .schedule import Schedule
 
@@ -18,10 +17,19 @@ def znajdz_optymalna_sale(schedule: Schedule, lesson: Lesson) -> Optional[str]:
             if schedule.classrooms[poprzednia_sala].can_accommodate(lesson):
                 return poprzednia_sala
 
-    # Znajdź najbliższą dostępną salę
+    # Znajdź salę odpowiednią dla przedmiotu
     dostepne_sale = []
     for room_id, sala in schedule.classrooms.items():
         if sala.can_accommodate(lesson):
+            # Specjalne zasady dla niektórych przedmiotów
+            if lesson.subject == 'Informatyka' and room_id not in {'14', '24'}:
+                continue
+            if lesson.subject == 'Wychowanie fizyczne' and room_id not in {'SILOWNIA', 'MALA_SALA', 'DUZA_HALA'}:
+                continue
+            if lesson.subject not in {'Informatyka', 'Wychowanie fizyczne'} and room_id in {'14', '24', 'SILOWNIA',
+                                                                                            'MALA_SALA', 'DUZA_HALA'}:
+                continue
+
             dostepne_sale.append((room_id, sala))
 
     if not dostepne_sale:
