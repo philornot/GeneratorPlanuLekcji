@@ -39,7 +39,7 @@ class ScheduleLogger:
 
         # Zapisz czas rozpoczęcia
         self.start_time = datetime.now()
-        self.logger.info("Rozpoczęto generowanie planu lekcji")
+        self.logger.info(f"Zapisano czas rozpoczęcia: {self.start_time}")
 
     def log_error(self, message: str):
         """Loguje błąd"""

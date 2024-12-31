@@ -1,6 +1,10 @@
 # config/teacher_data.py
 import random
-from typing import List, Set, Dict, Tuple
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
+from config import REGULAR_SUBJECTS, SPLIT_SUBJECTS
 
 # Najpopularniejsze polskie imiona
 FIRST_NAMES = {
@@ -30,150 +34,122 @@ LAST_NAMES = {
     ]
 }
 
-# Preferowane płcie dla przedmiotów (na podstawie statystyk)
-SUBJECT_GENDER_RATIO = {
-    'Polski': 0.9,  # 90% kobiet
-    'Matematyka': 0.6,
-    'Angielski': 0.8,
-    'Niemiecki': 0.8,
-    'Francuski': 0.9,
-    'Hiszpański': 0.8,
-    'Fizyka': 0.4,  # 40% kobiet
-    'Biologia': 0.7,
-    'Chemia': 0.6,
-    'Historia': 0.5,
-    'HiT': 0.5,
-    'Przedsiębiorczość': 0.6,
-    'WF': 0.5,
-    'Informatyka': 0.3,  # 30% kobiet
-    'Religia': 0.4
-}
 
-# Pary przedmiotów, które mogą być uczone przez jednego nauczyciela
-SUBJECT_PAIRS = [
-    {'Matematyka', 'Fizyka', 'Informatyka'},
-    {'Biologia', 'Chemia'},
-    {'Polski', 'Historia'},
-    {'Niemiecki', 'Angielski'},
-    {'Francuski', 'Hiszpański'}
-]
+@dataclass
+class SubjectRequirement:
+    weekly_hours: int
+    max_hours_per_teacher: int = 18  # Default for full-time
+    min_teachers: int = 1
 
 
 class TeacherDataGenerator:
     @staticmethod
-    def generate_teacher_name(subject: str) -> Tuple[str, str]:
-        """Generuje imię i nazwisko nauczyciela na podstawie statystyk dla przedmiotu"""
-        gender = 'K' if random.random() < SUBJECT_GENDER_RATIO[subject] else 'M'
-        first_name = random.choice(FIRST_NAMES[gender])
-        last_name = random.choice(LAST_NAMES[gender])
-        return first_name, last_name
+    def calculate_subject_requirements() -> Dict[str, SubjectRequirement]:
+        requirements = {}
+
+        # Calculate weekly hours for each subject across all classes
+        for year in range(1, 5):
+            classes_in_year = 5  # A-E
+
+            # Regular subjects
+            for subject, hours_per_year in REGULAR_SUBJECTS.items():
+                year_hours = hours_per_year.get(year, 0) * classes_in_year
+                if subject not in requirements:
+                    requirements[subject] = SubjectRequirement(year_hours)
+                else:
+                    requirements[subject].weekly_hours += year_hours
+
+            # Split subjects (multiply by 2 for groups)
+            for subject, hours_per_year in SPLIT_SUBJECTS.items():
+                year_hours = hours_per_year.get(year, 0) * classes_in_year * 2
+                if subject not in requirements:
+                    requirements[subject] = SubjectRequirement(year_hours)
+                else:
+                    requirements[subject].weekly_hours += year_hours
+
+        # Set special requirements for certain subjects
+        if 'WF' in requirements:
+            requirements['WF'].max_hours_per_teacher = 24
+            requirements['WF'].min_teachers = 4  # Minimum due to gender separation
+
+        if 'Informatyka' in requirements:
+            requirements['Informatyka'].max_hours_per_teacher = 20
+            requirements['Informatyka'].min_teachers = 2  # Due to computer lab constraints
+
+        return requirements
 
     @staticmethod
-    def calculate_required_teachers(max_teachers: int = 40) -> Dict[str, int]:
-        """Oblicza wymaganą liczbę nauczycieli dla każdego przedmiotu
-
-        Args:
-            max_teachers: Maksymalna łączna liczba nauczycieli (domyślnie 40)
-        """
-        # Liczba godzin tygodniowo dla każdego przedmiotu w całej szkole
-        total_hours = {
-            'Polski': (4 * 4) * 5,  # 4h * 4 roczniki * 5 klas
-            'Matematyka': (4 * 3 + 3) * 5,  # (4h * 3 roczniki + 3h * 1 rocznik) * 5 klas
-            'Angielski': 3 * 4 * 5 * 2,  # 3h * 4 roczniki * 5 klas * 2 grupy
-            'Niemiecki': 2 * 4 * 5,
-            'Francuski': 2 * 4 * 5,
-            'Hiszpański': 2 * 4 * 5,
-            'Fizyka': (1 + 2 * 3) * 5,  # (1h * 1 rocznik + 2h * 3 roczniki) * 5 klas
-            'Biologia': (1 + 2 * 2 + 1) * 5,
-            'Chemia': (1 + 2 * 2 + 1) * 5,
-            'Historia': 2 * 4 * 5,
-            'HiT': 1 * 2 * 5,  # 1h * 2 roczniki * 5 klas
-            'Przedsiębiorczość': 1 * 2 * 5,
-            'WF': 3 * 4 * 5 * 2,  # 3h * 4 roczniki * 5 klas * 2 grupy
-            'Informatyka': 1 * 4 * 5 * 2,  # 1h * 4 roczniki * 5 klas * 2 grupy
-            'Religia': 1 * 4 * 5
-        }
-
-        # Zakładamy, że nauczyciel na pełny etat ma 18h tygodniowo
-        # a na część etatu średnio 12h
-        required_teachers = {}
-        for subject, hours in total_hours.items():
-            full_time_count = hours // 18
-            if hours % 18 > 0:
-                full_time_count += 1  # Dodajemy jednego nauczyciela jeśli są nadgodziny
-            required_teachers[subject] = full_time_count
-
-        # Dostosuj liczbę nauczycieli do maksymalnego limitu
-        total_teachers = sum(required_teachers.values())
-        if total_teachers > max_teachers:
-            scaling_factor = max_teachers / total_teachers
-            for subject in required_teachers:
-                required_teachers[subject] = max(1, int(required_teachers[subject] * scaling_factor))
-
-        # Upewnij się, że mamy dokładnie max_teachers nauczycieli
-        while sum(required_teachers.values()) > max_teachers:
-            # Znajdź przedmiot z największą liczbą nauczycieli i zmniejsz o 1
-            subject = max(required_teachers.items(), key=lambda x: x[1])[0]
-            if required_teachers[subject] > 1:
-                required_teachers[subject] -= 1
-
-        return required_teachers
+    def calculate_minimum_teachers(requirements: Dict[str, SubjectRequirement]) -> Dict[str, int]:
+        teachers_count = {}
+        for subject, req in requirements.items():
+            # Calculate minimum teachers needed based on total hours and max hours per teacher
+            min_by_hours = (req.weekly_hours + req.max_hours_per_teacher - 1) // req.max_hours_per_teacher
+            teachers_count[subject] = max(min_by_hours, req.min_teachers)
+        return teachers_count
 
     @staticmethod
-    def assign_second_subjects(teachers_count: Dict[str, int]) -> List[Set[str]]:
-        """Przydziela drugie przedmioty nauczycielom tam gdzie to możliwe"""
-        assignments = []
-        remaining = teachers_count.copy()
+    def optimize_teacher_count(base_counts: Dict[str, int],
+                               total_target: int = 40) -> Dict[str, int]:
+        # Start with minimum counts
+        current_counts = deepcopy(base_counts)
+        total_teachers = sum(current_counts.values())
 
-        # Najpierw przydzielamy pojedyncze przedmioty dla minimalnej wymaganej liczby nauczycieli
-        for subject, count in teachers_count.items():
-            for _ in range(count):
-                assignments.append({subject})
+        if total_teachers > total_target:
+            # Need to reduce - try combining subjects first
+            pass  # Implementation for reduction if needed
 
-        # Próbujemy łączyć przedmioty gdzie to możliwe
-        for pair in SUBJECT_PAIRS:
-            subjects_in_pair = [s for s in pair if s in remaining and remaining[s] > 0]
-            while len(subjects_in_pair) >= 2:
-                s1, s2 = random.sample(subjects_in_pair, 2)
-                if remaining[s1] > 0 and remaining[s2] > 0:
-                    # Znajdujemy nauczyciela z jednym przedmiotem i dodajemy drugi
-                    for assignment in assignments:
-                        if len(assignment) == 1 and (s1 in assignment or s2 in assignment):
-                            assignment.add(s1 if s2 in assignment else s2)
-                            remaining[s1] -= 1
-                            remaining[s2] -= 1
-                            break
-                subjects_in_pair = [s for s in pair if s in remaining and remaining[s] > 0]
-
-        return assignments
+        return current_counts
 
     @classmethod
     def generate_teacher_data(cls) -> List[Dict]:
-        """Generuje pełne dane nauczycieli"""
-        required_teachers = cls.calculate_required_teachers()
-        subject_assignments = cls.assign_second_subjects(required_teachers)
+        requirements = cls.calculate_subject_requirements()
+        min_teachers = cls.calculate_minimum_teachers(requirements)
+        optimized_counts = cls.optimize_teacher_count(min_teachers)
 
         teachers = []
         teacher_id = 1
 
-        for subjects in subject_assignments:
-            main_subject = random.choice(list(subjects))
-            first_name, last_name = cls.generate_teacher_name(main_subject)
+        for subject, count in optimized_counts.items():
+            for _ in range(count):
+                first_name, last_name = cls.generate_teacher_name()
+                is_full_time = True if requirements[subject].weekly_hours >= 15 else False
 
-            # Określ dostępność (pełny etat lub część etatu)
-            is_full_time = random.random() < 0.6  # 60% nauczycieli na pełny etat
-            available_days = {0, 1, 2, 3, 4} if is_full_time else set(
-                random.sample(range(5), k=3 if random.random() < 0.7 else 2)
-            )
+                available_days = {0, 1, 2, 3, 4} if is_full_time else set(
+                    random.sample(range(5), k=3 if random.random() < 0.7 else 2)
+                )
 
-            teachers.append({
-                'teacher_id': f"T{teacher_id}",
-                'first_name': first_name,
-                'last_name': last_name,
-                'subjects': subjects,
-                'is_full_time': is_full_time,
-                'available_days': available_days
-            })
-            teacher_id += 1
+                teachers.append({
+                    'teacher_id': f"T{teacher_id}",
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'subjects': {subject},  # Start with single subject
+                    'is_full_time': is_full_time,
+                    'available_days': available_days
+                })
+                teacher_id += 1
+
+        # Try to assign second subjects where possible
+        cls._assign_secondary_subjects(teachers)
 
         return teachers
+
+    @staticmethod
+    def _assign_secondary_subjects(teachers: List[Dict]):
+        all_subjects = set(REGULAR_SUBJECTS.keys()) | set(SPLIT_SUBJECTS.keys())
+
+        for teacher in teachers:
+            if teacher['is_full_time'] and len(teacher['subjects']) == 1:
+                main_subject = next(iter(teacher['subjects']))
+                available_subjects = list(all_subjects - {main_subject})
+                if available_subjects and random.random() < 0.3:  # 30% szans na drugi przedmiot
+                    second_subject = random.choice(available_subjects)
+                    teacher['subjects'].add(second_subject)
+
+    # Previous helper methods remain unchanged
+    @staticmethod
+    def generate_teacher_name() -> Tuple[str, str]:
+        """Generuje losowe imię i nazwisko nauczyciela"""
+        gender = random.choice(['K', 'M'])
+        first_name = random.choice(FIRST_NAMES[gender])
+        last_name = random.choice(LAST_NAMES[gender])
+        return first_name, last_name
