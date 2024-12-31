@@ -1,8 +1,9 @@
 # models/room_optimizer.py
 from typing import Optional
+
 from .lesson import Lesson
-from .classroom import Classroom
 from .schedule import Schedule
+
 
 def znajdz_optymalna_sale(schedule: Schedule, lesson: Lesson) -> Optional[str]:
     """Znajduje optymalną salę dla lekcji"""
