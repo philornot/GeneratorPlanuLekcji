@@ -143,3 +143,7 @@ class Teacher:
             },
             'teaching_hours': self.get_teaching_hours()
         }
+
+    def is_available(self, day: int, hour: int) -> bool:
+        """Sprawdza czy nauczyciel jest dostępny w danym terminie"""
+        return day in self.available_days and not self.schedule[day][hour]

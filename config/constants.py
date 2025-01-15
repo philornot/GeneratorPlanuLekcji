@@ -47,7 +47,7 @@ MAX_CONSECUTIVE_HOURS: Dict[str, int] = {
     'Matematyka': 2,
     'Polski': 2,
     'Informatyka': 2,
-    'Wychowanie fizyczne': 1
+    'Wychowanie fizyczne': 1  # Tylko 1h dziennie dla danej grupy!
 }
 
 # Przedmioty, które nie mogą być pierwsze ani ostatnie
@@ -69,3 +69,101 @@ RELATED_SUBJECTS: List[Set[str]] = [
     {'Geografia', 'Biologia'},
     {'Język obcy nowożytny', 'Drugi język obcy'}
 ]
+
+# File: config/constants.py
+
+# Istniejące stałe...
+
+# Wagi przedmiotów dla poszczególnych godzin lekcyjnych
+HOUR_WEIGHTS = {
+    1: {  # Pierwsza lekcja
+        'Język obcy nowożytny': 8,
+        'Historia': 7,
+        'Geografia': 7,
+        'Biologia': 6,
+        'Chemia': 6,
+        'Informatyka': 5,
+        'HiT': 5,
+        'Przedsiębiorczość': 5,
+        'Wychowanie fizyczne': 4,
+        'Drugi język obcy': 4
+    },
+    2: {  # Druga lekcja
+        'Matematyka': 10,
+        'Polski': 9,
+        'Fizyka': 8,
+        'Język obcy nowożytny': 7,
+        'Chemia': 7,
+        'Biologia': 6
+    },
+    3: {  # Trzecia lekcja
+        'Matematyka': 10,
+        'Polski': 9,
+        'Fizyka': 8,
+        'Chemia': 7,
+        'Biologia': 7,
+        'Historia': 6
+    },
+    4: {  # Czwarta lekcja
+        'Matematyka': 8,
+        'Polski': 8,
+        'Historia': 7,
+        'Geografia': 7,
+        'Język obcy nowożytny': 6,
+        'Drugi język obcy': 6
+    },
+    5: {  # Piąta lekcja
+        'Język obcy nowożytny': 7,
+        'Drugi język obcy': 7,
+        'Geografia': 6,
+        'Historia': 6,
+        'Wychowanie fizyczne': 5,
+        'HiT': 5
+    },
+    6: {  # Szósta lekcja
+        'Wychowanie fizyczne': 7,
+        'Informatyka': 6,
+        'HiT': 5,
+        'Przedsiębiorczość': 5,
+        'Zajęcia z wychowawcą': 5
+    },
+    7: {  # Siódma lekcja
+        'Wychowanie fizyczne': 6,
+        'Informatyka': 5,
+        'Zajęcia z wychowawcą': 5,
+        'Edukacja dla bezpieczeństwa': 4
+    },
+    8: {  # Ósma lekcja
+        'Wychowanie fizyczne': 5,
+        'Zajęcia z wychowawcą': 4,
+        'Edukacja dla bezpieczeństwa': 4
+    }
+}
+
+# Domyślne wagi przedmiotów
+DEFAULT_SUBJECT_WEIGHTS = {
+    'Matematyka': 8,
+    'Polski': 8,
+    'Fizyka': 7,
+    'Chemia': 7,
+    'Biologia': 6,
+    'Geografia': 6,
+    'Historia': 6,
+    'Język obcy nowożytny': 6,
+    'Drugi język obcy': 5,
+    'Informatyka': 5,
+    'Wychowanie fizyczne': 5,
+    'HiT': 4,
+    'Przedsiębiorczość': 4,
+    'Zajęcia z wychowawcą': 4,
+    'Edukacja dla bezpieczeństwa': 3
+}
+
+# Przedmioty maturalne (do bonusu wagowego)
+MATURA_SUBJECTS = {'Matematyka', 'Polski', 'Język obcy nowożytny'}
+
+# Modyfikatory wag
+WEIGHT_MODIFIERS = {
+    'MATURA_BONUS': 1.2,
+    'HOURS_MODIFIER_MAX': 1.5
+}

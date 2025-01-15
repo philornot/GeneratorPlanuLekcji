@@ -1,7 +1,9 @@
 # utils/logger.py
-import logging
 import os
+import sys
 from datetime import datetime
+
+from loguru import logger
 
 
 class ScheduleLogger:
@@ -9,64 +11,88 @@ class ScheduleLogger:
         # Upewnij się, że katalog logs istnieje
         os.makedirs('logs', exist_ok=True)
 
-        # Skonfiguruj logger
-        self.logger = logging.getLogger('ScheduleGenerator')
-        self.logger.setLevel(logging.DEBUG)
+        # Usuń domyślny sink
+        logger.remove()
 
-        # Usuń poprzednie handlery (jeśli istnieją)
-        if self.logger.handlers:
-            self.logger.handlers.clear()
+        # Klasa do zliczania duplikatów
+        class DuplicateCounter:
+            def __init__(self):
+                self.last_message = None
+                self.count = 0
+                self.shown = 0
 
-        # Handler do pliku
-        file_handler = logging.FileHandler(log_file, mode='w')  # 'w' nadpisuje plik
-        file_handler.setLevel(logging.DEBUG)
+        counter = DuplicateCounter()
 
-        # Handler do konsoli
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.DEBUG)
+        def duplicate_filter(record):
+            if counter.last_message == record["message"]:
+                counter.count += 1
+                if counter.shown < 3:
+                    counter.shown += 1
+                    if counter.shown == 3 and counter.count > 3:
+                        # Modyfikuj trzeci log, aby pokazać liczbę dodatkowych wystąpień
+                        extra = counter.count - 3
+                        record["message"] += f" [{extra} {'raz' if extra == 1 else 'razy'} więcej...]"
+                    return counter.shown <= 3
+                return False
+            else:
+                # Nowa wiadomość - reset liczników
+                counter.last_message = record["message"]
+                counter.count = 1
+                counter.shown = 1
+                return True
 
         # Format logów
-        formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
+        format_str = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> - <level>{level: <8}</level> - {message}"
 
-        # Dodaj handlery do loggera
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
+        # Handler do pliku
+        logger.add(
+            log_file,
+            format=format_str,
+            filter=duplicate_filter,
+            mode='w',  # nadpisuje plik
+            level="DEBUG",
+            enqueue=True  # zapewnia bezpieczeństwo wątków
+        )
+
+        # Handler do konsoli
+        logger.add(
+            sys.stderr,
+            format=format_str,
+            filter=duplicate_filter,
+            level="DEBUG",
+            enqueue=True
+        )
 
         # Zapisz czas rozpoczęcia
         self.start_time = datetime.now()
 
     def log_error(self, message: str):
         """Loguje błąd"""
-        self.logger.error(message)
+        logger.error(message)
 
     def log_warning(self, message: str):
         """Loguje ostrzeżenie"""
-        self.logger.warning(message)
+        logger.warning(message)
 
     def log_info(self, message: str):
         """Loguje informację"""
-        self.logger.info(message)
+        logger.info(message)
 
     def log_debug(self, message: str):
         """Loguje informację debugowania"""
-        self.logger.debug(message)
+        logger.debug(message)
 
     def log_validation_errors(self, class_name: str, errors: list):
         """Loguje błędy walidacji dla danej klasy"""
         if errors:
-            self.logger.error(f"Znaleziono błędy w planie klasy {class_name}:")
+            logger.error(f"Znaleziono błędy w planie klasy {class_name}:")
             for error in errors:
-                self.logger.error(f"  - {error}")
+                logger.error(f"  - {error}")
 
     def log_generation_stats(self, generated_classes: int, total_errors: int):
         """Loguje statystyki generowania planu"""
         duration = datetime.now() - self.start_time
-        self.logger.info(f"""
+        logger.info(f"""
 Zakończono generowanie planu:
 - Wygenerowano planów: {generated_classes}
 - Liczba błędów: {total_errors}
