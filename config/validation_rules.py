@@ -47,25 +47,22 @@ class ValidationRules:
 
     @staticmethod
     def _validate_continuity(school_class: SchoolClass) -> List[str]:
-        """Sprawdza ciągłość lekcji (brak okienek)"""
+        """Sprawdza ciągłość lekcji (brak okienek) - najwyższy priorytet po liczbie godzin"""
         errors = []
         for day in range(5):
-            for group in [1, 2]:
-                group_lessons = []
-                for hour in range(1, 10):
-                    lessons = [l for l in school_class.schedule[day][hour]
-                               if l.group == group or l.group is None]
-                    if lessons:
-                        group_lessons.append(hour)
+            hours_with_lessons = []
+            for hour in range(1, 10):
+                if school_class.schedule[day][hour]:
+                    hours_with_lessons.append(hour)
 
-                if group_lessons:
-                    min_hour = min(group_lessons)
-                    max_hour = max(group_lessons)
-                    for hour in range(min_hour, max_hour + 1):
-                        if hour not in group_lessons:
-                            errors.append(
-                                f"Dzień {day}, grupa {group}: okienko na lekcji {hour}"
-                            )
+            if hours_with_lessons:
+                min_hour = min(hours_with_lessons)
+                max_hour = max(hours_with_lessons)
+
+                # Sprawdź każdą godzinę między pierwszą a ostatnią
+                for hour in range(min_hour, max_hour + 1):
+                    if hour not in hours_with_lessons:
+                        errors.append(f"KRYTYCZNY: Dzień {day}: znaleziono okienko na godzinie {hour}")
 
         return errors
 

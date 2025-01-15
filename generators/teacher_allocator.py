@@ -1,10 +1,10 @@
 # generators/teacher_allocator.py
-from typing import Dict, List, Set, Optional
-from models.teacher import Teacher
+from typing import Dict, List
+
 from models.lesson import Lesson
 from models.schedule import Schedule
+from models.teacher import Teacher
 from utils.logger import ScheduleLogger
-import random
 
 
 class TeacherAllocator:
@@ -74,31 +74,27 @@ class TeacherAllocator:
 
     def _allocate_teacher_to_lesson(self, lesson: Lesson, subject_teachers: Dict[str, List[Teacher]]) -> bool:
         if lesson.subject not in subject_teachers:
-            self.logger.log_error(f"Brak nauczycieli dla przedmiotu: {lesson.subject}")
             return False
 
-        def oblicz_punktacje_nauczyciela(nauczyciel: Teacher) -> float:
-            obecne_godziny = nauczyciel.get_teaching_hours()
-            docelowe_godziny = 18 if nauczyciel.is_full_time else 12
-            return abs(docelowe_godziny - obecne_godziny)
-
-        dostepni_nauczyciele = []
+        # Sortuj nauczycieli według liczby przydzielonych godzin (najpierw ci z najmniejszą liczbą)
+        available_teachers = []
         for teacher in subject_teachers[lesson.subject]:
             if (lesson.day in teacher.available_days and
                     not teacher.schedule[lesson.day][lesson.hour]):
-                hours = teacher.get_teaching_hours()
+                current_hours = teacher.get_teaching_hours()
                 max_hours = 18 if teacher.is_full_time else 12
-                if hours < max_hours:
-                    dostepni_nauczyciele.append(teacher)
+                if current_hours < max_hours:
+                    available_teachers.append((teacher, current_hours))
 
-        if not dostepni_nauczyciele:
+        if not available_teachers:
             return False
 
-        # Wybierz nauczyciela z punktacją najbliższą docelowej liczbie godzin
-        wybrany_nauczyciel = min(dostepni_nauczyciele, key=oblicz_punktacje_nauczyciela)
-        lesson.teacher_id = wybrany_nauczyciel.teacher_id
-        wybrany_nauczyciel.add_lesson(lesson)
+        # Wybierz nauczyciela z najmniejszą liczbą godzin
+        available_teachers.sort(key=lambda x: x[1])
+        chosen_teacher, _ = available_teachers[0]
 
+        lesson.teacher_id = chosen_teacher.teacher_id
+        chosen_teacher.add_lesson(lesson)
         return True
 
     def validate_allocation(self) -> List[str]:

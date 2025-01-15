@@ -1,6 +1,8 @@
 # models/schedule.py
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Optional, Tuple
+
+from config import REGULAR_SUBJECTS, WEEKLY_HOURS
 from .lesson import Lesson
 from .classroom import Classroom
 from .school_class import SchoolClass
@@ -95,29 +97,34 @@ class Schedule:
         # Podstawowy wynik startowy
         score = 100.0
 
-        # 1. Sprawdź czy wszystkie wymagane lekcje są przydzielone (-30 punktów)
-        required_lessons = 0
-        actual_lessons = len(self.lessons)
+        # 1. Sprawdź zgodność z WEEKLY_HOURS (-40 punktów)
         for class_name, school_class in self.classes.items():
-            required_lessons += school_class.required_hours
+            required_hours = WEEKLY_HOURS[school_class.year]
+            actual_hours = sum(1 for day in range(5) for hour in range(1, 10)
+                               if school_class.schedule[day][hour])
+            if actual_hours != required_hours:
+                score -= 40 * abs(actual_hours - required_hours) / required_hours
 
-        if actual_lessons < required_lessons:
-            lesson_penalty = 30 * (required_lessons - actual_lessons) / required_lessons
-            score -= lesson_penalty
+        # 2. Sprawdź ciągłość (-30 punktów)
+        for class_name, school_class in self.classes.items():
+            for day in range(5):
+                hours = sorted([hour for hour in range(1, 10)
+                                if school_class.schedule[day][hour]])
+                if hours:
+                    for i in range(min(hours), max(hours)):
+                        if i not in hours:
+                            score -= 30
 
-        # 2. Sprawdź konflikty (-20 punktów)
-        conflicts = len(self.get_conflicts())
-        if conflicts > 0:
-            conflict_penalty = min(20, conflicts * 2)
-            score -= conflict_penalty
-
-        # 3. Sprawdź poprawność planów klas (-20 punktów)
-        class_errors = 0
-        for school_class in self.classes.values():
-            class_errors += len(school_class.validate_schedule())
-        if class_errors > 0:
-            class_penalty = min(20, class_errors)
-            score -= class_penalty
+        # 3. Sprawdź zgodność z REGULAR_SUBJECTS (-20 punktów)
+        for class_name, school_class in self.classes.items():
+            year = school_class.year
+            for subject, hours in REGULAR_SUBJECTS.items():
+                required = hours[year]
+                actual = sum(1 for day in range(5) for hour in range(1, 10)
+                             for lesson in school_class.schedule[day][hour]
+                             if lesson.subject == subject)
+                if actual != required:
+                    score -= 20 * abs(actual - required) / required
 
         # 4. Sprawdź obciążenie nauczycieli (-15 punktów)
         teacher_loads = [
@@ -142,6 +149,29 @@ class Schedule:
             if avg_usage < 60:  # Oczekujemy minimum 60% wykorzystania
                 usage_penalty = min(15, int((60 - avg_usage) / 4))
                 score -= usage_penalty
+
+        # 6. Nowa sekcja: Sprawdź okienka (-20 punktów)
+        total_gaps = 0
+        for class_name, school_class in self.classes.items():
+            for day in range(5):
+                hours = sorted([
+                    hour for hour in range(1, 10)
+                    if school_class.schedule[day][hour] and
+                       not any(l.subject == 'Religia/Etyka' for l in school_class.schedule[day][hour])
+                ])
+
+                if hours:  # Jeśli są jakieś lekcje w tym dniu
+                    first_hour = min(hours)
+                    last_hour = max(hours)
+
+                    # Policz okienka między pierwszą a ostatnią lekcją
+                    for hour in range(first_hour, last_hour):
+                        if hour not in hours:
+                            total_gaps += 1
+
+        if total_gaps > 0:
+            gaps_penalty = min(20, total_gaps * 2)  # Maksymalnie 20 punktów kary
+            score -= gaps_penalty
 
         return float(max(0.0, score))
 

@@ -71,55 +71,21 @@ class SchoolClass:
         """Sprawdza czy plan jest zgodny z zasadami"""
         errors = []
 
-        # Sprawdź liczbę godzin dziennie
-        for day in range(5):
-            hours = self.get_day_hours(day)
-            if len(hours) < 5:
-                errors.append(f"Dzień {day}: za mało lekcji (minimum 5)")
-            elif len(hours) > 8:
-                errors.append(f"Dzień {day}: za dużo lekcji (maksimum 8)")
-
         # Sprawdź ciągłość zajęć (brak okienek)
         for day in range(5):
-            hours = self.get_day_hours(day)
-            if hours:
-                for i in range(min(hours), max(hours)):
-                    if i not in hours:
-                        errors.append(f"Dzień {day}: okienko na lekcji {i}")
+            hours = sorted([
+                hour for hour in range(1, 10)
+                if self.schedule[day][hour] and
+                   not any(l.subject == 'Religia/Etyka' for l in self.schedule[day][hour])
+            ])
 
-        # Sprawdź ograniczenia przedmiotów
-        restricted_subjects = {'Matematyka', 'Fizyka'}
-        for day in range(5):
-            hours = self.get_day_hours(day)
-            if hours:
+            if hours:  # Jeśli są jakieś lekcje w tym dniu
                 first_hour = min(hours)
                 last_hour = max(hours)
-                for subject in restricted_subjects:
-                    for hour in [first_hour, last_hour]:
-                        if any(l.subject == subject for l in self.schedule[day][hour]):
-                            errors.append(
-                                f"Dzień {day}: {subject} nie może być na "
-                                f"{'pierwszej' if hour == first_hour else 'ostatniej'} lekcji"
-                            )
 
-        # Sprawdź maksymalną liczbę godzin pod rząd
-        max_consecutive = {
-            'Matematyka': 2,
-            'Polski': 2,
-            'Informatyka': 2,
-            'Wychowanie fizyczne': 1
-        }
-        for day in range(5):
-            for subject, max_hours in max_consecutive.items():
-                consecutive = 0
-                for hour in range(1, 10):
-                    if any(l.subject == subject for l in self.schedule[day][hour]):
-                        consecutive += 1
-                        if consecutive > max_hours:
-                            errors.append(
-                                f"Dzień {day}: za dużo godzin {subject} pod rząd"
-                            )
-                    else:
-                        consecutive = 0
+                # Sprawdź czy nie ma przerw między pierwszą a ostatnią lekcją
+                for hour in range(first_hour, last_hour + 1):
+                    if hour not in hours:
+                        errors.append(f"Dzień {day}: znaleziono okienko na godzinie {hour}")
 
         return errors

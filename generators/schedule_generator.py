@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 
-from config.constants import REGULAR_SUBJECTS
+from config.constants import REGULAR_SUBJECTS, WEEKLY_HOURS
 from models.classroom import Classroom
 from models.lesson import Lesson
 from models.room_optimizer import znajdz_optymalna_sale
@@ -24,7 +24,8 @@ class GeneratorConfig:
     crossover_rate: float = 0.8
     elitism_count: int = 5
     retry_count: int = 5
-    early_stop_iterations: int = 5  # Po ilu iteracjach bez poprawy kończymy
+    early_stop_iterations: int = 20  # Po ilu iteracjach bez poprawy kończymy
+    gaps_penalty: float = 20.0
 
 
 class ScheduleGenerator:
@@ -124,7 +125,7 @@ class ScheduleGenerator:
 
             current_time = time.time()
             if current_time - last_progress_time >= progress_interval:
-                self.logger.log_info(f"Postęp: iteracja {iteration}/{self.config.max_iterations}, "
+                self.logger.log_debug(f"Postęp: iteracja {iteration}/{self.config.max_iterations}, "
                                      f"najlepszy wynik: {best_score:.2f}/100")
                 last_progress_time = current_time
 
@@ -170,47 +171,47 @@ class ScheduleGenerator:
             population.append(schedule)
         return population
 
+    # generators/schedule_generator.py
     def _assign_random_lessons(self, schedule: Schedule):
-        """Przydziela lekcje losowo do planu"""
+        """Przydziela lekcje losowo do planu z zachowaniem ciągłości"""
         for class_name, school_class in schedule.classes.items():
+            # Najpierw sprawdź wymagane godziny dla rocznika
+            required_weekly_hours = WEEKLY_HOURS[school_class.year]
             required_subjects = self._get_required_subjects(school_class)
 
-            # Sortuj przedmioty według priorytetów
-            priority_subjects = {
-                'Matematyka': 3,
-                'Polski': 3,
-                'Wychowanie fizyczne': 2,
-                'Język obcy nowożytny': 2
-            }
+            # Sprawdź czy suma godzin przedmiotów zgadza się z wymaganą liczbą godzin
+            total_subject_hours = sum(required_subjects.values())
+            if total_subject_hours != required_weekly_hours:
+                # Dostosuj godziny przedmiotów, aby suma się zgadzała
+                adjustment = required_weekly_hours - total_subject_hours
+                while adjustment != 0:
+                    if adjustment > 0:
+                        # Dodaj godziny do przedmiotów, które mogą mieć więcej
+                        for subject in ['Polski', 'Matematyka', 'Język obcy nowożytny']:
+                            if adjustment > 0 and subject in required_subjects:
+                                required_subjects[subject] += 1
+                                adjustment -= 1
+                    else:
+                        # Zmniejsz godziny przedmiotów opcjonalnych
+                        for subject in ['Religia/Etyka', 'Informatyka', 'Geografia']:
+                            if adjustment < 0 and subject in required_subjects and required_subjects[subject] > 1:
+                                required_subjects[subject] -= 1
+                                adjustment += 1
 
-            sorted_subjects = sorted(
-                required_subjects.items(),
-                key=lambda x: (priority_subjects.get(x[0], 1), x[1]),
-                reverse=True
-            )
-
-            # Przydziel wszystkie przedmioty
-            for subject, hours in sorted_subjects:
-                hours_per_day = min(2, hours) if subject in {'Matematyka', 'Polski'} else 1
-                days = list(range(5))
-                random.shuffle(days)
-
-                lessons_assigned = 0
-                for day in days:
-                    for _ in range(hours_per_day):
-                        if lessons_assigned >= hours:
-                            break
-
-                        for _ in range(self.config.retry_count):
-                            if subject in {'Matematyka', 'Fizyka'}:
-                                hour = random.randint(2, 7)  # Nie pierwsze/ostatnie
-                            else:
-                                hour = random.randint(1, 8)
-
-                            lesson = self._create_lesson(subject, class_name, day, hour, schedule)
-                            if lesson and schedule.add_lesson(lesson):
-                                lessons_assigned += 1
-                                break
+    def _get_subject_priority(self, subject: str) -> int:
+        """Zwraca priorytet przedmiotu do układania w planie"""
+        priorities = {
+            'Matematyka': 5,
+            'Polski': 5,
+            'Język obcy nowożytny': 4,
+            'Drugi język obcy': 4,
+            'Wychowanie fizyczne': 4,
+            'Fizyka': 3,
+            'Chemia': 3,
+            'Biologia': 3,
+            'Historia': 3
+        }
+        return priorities.get(subject, 1)
 
     @staticmethod
     def _get_required_subjects(school_class: SchoolClass) -> Dict[str, int]:
