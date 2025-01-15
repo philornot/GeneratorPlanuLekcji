@@ -1,5 +1,6 @@
 # generators/teacher_allocator.py
-from typing import Dict, List
+import random
+from typing import Dict, List, Optional
 
 from models.lesson import Lesson
 from models.schedule import Schedule
@@ -22,21 +23,23 @@ class TeacherAllocator:
         # Sortuj lekcje według trudności przydzielenia (najpierw najtrudniejsze)
         lessons = self._sort_lessons_by_difficulty()
 
-        # Próbuj przydzielić nauczycieli do wszystkich lekcji
-        success = True
+        # Nowa lista lekcji z przypisanymi nauczycielami
+        updated_lessons = []
+
         for lesson in lessons:
-            if not self._allocate_teacher_to_lesson(lesson, subject_teachers):
-                self.logger.log_error(f"Nie można przydzielić nauczyciela do lekcji: {lesson.subject} "
-                                      f"dla klasy {lesson.class_name}")
-                success = False
-                break
+            new_lesson = self._allocate_teacher_to_lesson(lesson, subject_teachers)
+            if new_lesson:
+                updated_lessons.append(new_lesson)
+            else:
+                self.logger.log_error(f"Nie można przydzielić nauczyciela do lekcji: {lesson}")
+                return False
 
-        if success:
-            self.logger.log_info("Przydział nauczycieli zakończony sukcesem")
-        else:
-            self.logger.log_error("Nie udało się przydzielić wszystkich nauczycieli")
+        # Użyj nowej metody update_lessons
+        self.schedule.update_lessons(updated_lessons)
 
-        return success
+        self.logger.log_info("Przydział nauczycieli zakończony sukcesem")
+
+        return True
 
     def _get_subject_teachers(self) -> Dict[str, List[Teacher]]:
         """Tworzy mapę przedmiotów do nauczycieli, którzy mogą je uczyć"""
@@ -72,30 +75,41 @@ class TeacherAllocator:
         lessons.sort(key=get_difficulty, reverse=True)
         return lessons
 
-    def _allocate_teacher_to_lesson(self, lesson: Lesson, subject_teachers: Dict[str, List[Teacher]]) -> bool:
+    @staticmethod
+    def _allocate_teacher_to_lesson(lesson: Lesson, subject_teachers: Dict[str, List[Teacher]]) -> Optional[
+        Lesson]:
         if lesson.subject not in subject_teachers:
-            return False
+            return None
 
-        # Sortuj nauczycieli według liczby przydzielonych godzin (najpierw ci z najmniejszą liczbą)
         available_teachers = []
         for teacher in subject_teachers[lesson.subject]:
-            if (lesson.day in teacher.available_days and
-                    not teacher.schedule[lesson.day][lesson.hour]):
+            if (lesson.day in teacher.available_days or
+                    len([d for d in teacher.available_days if abs(d - lesson.day) <= 1]) > 0):
+
                 current_hours = teacher.get_teaching_hours()
-                max_hours = 18 if teacher.is_full_time else 12
+                max_hours = 20 if teacher.is_full_time else 15
+
                 if current_hours < max_hours:
                     available_teachers.append((teacher, current_hours))
 
         if not available_teachers:
-            return False
+            return None
 
-        # Wybierz nauczyciela z najmniejszą liczbą godzin
         available_teachers.sort(key=lambda x: x[1])
-        chosen_teacher, _ = available_teachers[0]
+        chosen_teacher = random.choice(available_teachers[:3])[0]
 
-        lesson.teacher_id = chosen_teacher.teacher_id
-        chosen_teacher.add_lesson(lesson)
-        return True
+        # Tworzenie nowej lekcji z przypisanym nauczycielem
+        new_lesson = Lesson(
+            subject=lesson.subject,
+            teacher_id=chosen_teacher.teacher_id,
+            room_id=lesson.room_id,
+            day=lesson.day,
+            hour=lesson.hour,
+            class_name=lesson.class_name
+        )
+
+        chosen_teacher.add_lesson(new_lesson)
+        return new_lesson
 
     def validate_allocation(self) -> List[str]:
         """Sprawdza poprawność przydziału nauczycieli"""

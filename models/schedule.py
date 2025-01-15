@@ -1,10 +1,10 @@
 # models/schedule.py
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from config import REGULAR_SUBJECTS, WEEKLY_HOURS
-from .lesson import Lesson
 from .classroom import Classroom
+from .lesson import Lesson
 from .school_class import SchoolClass
 from .teacher import Teacher
 
@@ -88,6 +88,10 @@ class Schedule:
             ]
 
         return errors
+
+    def update_lessons(self, new_lessons: List[Lesson]):
+        """Aktualizuje listę lekcji"""
+        self.lessons = new_lessons
 
     def calculate_schedule_score(self) -> float:
         """Oblicza ogólną ocenę planu (0-100)"""

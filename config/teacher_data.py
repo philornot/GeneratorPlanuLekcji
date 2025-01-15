@@ -80,9 +80,14 @@ class TeacherDataGenerator:
     def calculate_minimum_teachers(requirements: Dict[str, SubjectRequirement]) -> Dict[str, int]:
         teachers_count = {}
         for subject, req in requirements.items():
-            # Calculate minimum teachers needed based on total hours and max hours per teacher
-            min_by_hours = (req.weekly_hours + req.max_hours_per_teacher - 1) // req.max_hours_per_teacher
-            teachers_count[subject] = max(min_by_hours, req.min_teachers)
+            # Jeszcze większy mnożnik dla kluczowych przedmiotów
+            base_multiplier = 3 if subject in {'Polski', 'Matematyka', 'Wychowanie fizyczne',
+                                               'Język obcy nowożytny'} else 2
+
+            # Obliczamy minimum nauczycieli
+            min_by_hours = max(1, (req.weekly_hours + req.max_hours_per_teacher - 1) // req.max_hours_per_teacher)
+            teachers_count[subject] = max(min_by_hours * base_multiplier, req.min_teachers * 2)
+
         return teachers_count
 
     @staticmethod
@@ -131,27 +136,28 @@ class TeacherDataGenerator:
 
         return teachers
 
-    @staticmethod
     def _assign_secondary_subjects(teachers: List[Dict]):
         SUBJECT_PAIRS = [
             {'Matematyka', 'Fizyka'},
             {'Biologia', 'Chemia'},
             {'Geografia', 'Biologia'},
-            {'Język obcy nowożytny', 'Drugi język obcy'}
+            {'Język obcy nowożytny', 'Drugi język obcy'},
+            {'Polski', 'Historia'},  # Dodatkowa para
+            {'Matematyka', 'Informatyka'}  # Dodatkowa para
         ]
 
         for teacher in teachers:
             if teacher['is_full_time'] and len(teacher['subjects']) == 1:
                 main_subject = next(iter(teacher['subjects']))
 
-                # Find valid pairs for this subject
-                valid_pairs = [pair for pair in SUBJECT_PAIRS
-                               if main_subject in pair]
+                # 80% szansy na drugi przedmiot
+                if random.random() < 0.8:
+                    valid_pairs = [pair for pair in SUBJECT_PAIRS if main_subject in pair]
 
-                if valid_pairs and random.random() < 0.3:  # 30% chance for second subject
-                    chosen_pair = random.choice(valid_pairs)
-                    second_subject = next(iter(chosen_pair - {main_subject}))
-                    teacher['subjects'].add(second_subject)
+                    if valid_pairs:
+                        chosen_pair = random.choice(valid_pairs)
+                        second_subject = next(iter(chosen_pair - {main_subject}))
+                        teacher['subjects'].add(second_subject)
 
     @staticmethod
     def generate_teacher_name() -> Tuple[str, str]:

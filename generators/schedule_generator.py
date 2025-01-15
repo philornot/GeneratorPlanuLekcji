@@ -3,7 +3,7 @@ import random
 import time
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional, Tuple, Set, Union
 
 from config.constants import REGULAR_SUBJECTS, DEFAULT_SUBJECT_WEIGHTS, HOUR_WEIGHTS, WEIGHT_MODIFIERS, MATURA_SUBJECTS
 from models.classroom import Classroom
@@ -50,6 +50,15 @@ class ScheduleGenerator:
 
             # Przydzielamy lekcje z uwzględnieniem rozkładu godzin
             self._assign_class_lessons(class_name, hours_per_day)
+
+    def _reset_teachers_schedule(self):
+        """Resetuje harmonogramy nauczycieli między próbami generowania planu"""
+        for teacher in self.schedule.teachers.values():
+            # Resetowanie harmonogramu do pustego
+            teacher.schedule = {
+                day: {hour: [] for hour in range(1, 10)}
+                for day in range(5)
+            }
 
     def _create_initial_population(self) -> List[Schedule]:
         """Tworzy początkową populację planów"""
@@ -330,70 +339,127 @@ class ScheduleGenerator:
         self.schedule.classrooms['DUZA_HALA'] = Classroom.create_gym_room('DUZA_HALA')
 
     def generate_schedule(self) -> tuple[bool, int]:
-        """Generuje plan lekcji używając algorytmu genetycznego"""
         if not self._validate_resources():
             return False, 0
 
         self.logger.log_info("Rozpoczynamy generowanie planu")
 
+        max_attempts = 10  # Maksymalna liczba prób
+        current_attempt = 0
+
+        while current_attempt < max_attempts:
+            try:
+                # Resetujemy stan przed każdą próbą
+                self.schedule = Schedule()
+                self.initialize_schedule()
+
+                # Dodatkowe resetowanie nauczycieli
+                self._reset_teachers_schedule()
+
+                self.logger.log_info(f"Próba {current_attempt + 1}/{max_attempts}")
+
+                success, iterations = self._generate_schedule_attempt()
+
+                if success:
+                    return True, iterations
+
+                current_attempt += 1
+
+            except Exception as e:
+                self.logger.log_error(f"Błąd podczas generowania planu: {str(e)}")
+                current_attempt += 1
+
+        self.logger.log_error("Nie udało się wygenerować planu po wszystkich próbach")
+        return False, max_attempts
+
+    def _generate_schedule_attempt(self) -> tuple[bool, int]:
+        """
+        Próbuje wygenerować plan lekcji z zachowaniem wielokrotnych strategii.
+
+        Returns:
+        - Tuple: (czy się udało, liczba iteracji)
+        """
         last_progress_time = time.time()
         progress_interval = 5
         stagnant_iterations = 0
         best_schedule = None
-        best_score = 0
+        best_score = 0.0  # Initialize as float
+
+        # Tworzymy początkową populację planów
         population = self._create_initial_population()
 
         for iteration in range(self.config.max_iterations):
-            # Dodajemy list() aby zamienić generator na listę
-            scores = list([(schedule, schedule.calculate_schedule_score())
-                           for schedule in population])
+            # Oblicz oceny wszystkich planów w populacji
+            scores = [(schedule, schedule.calculate_schedule_score())
+                      for schedule in population]
             scores.sort(key=lambda x: x[1], reverse=True)
-            current_best = scores[0]
 
-            if current_best[1] > best_score:
-                best_score = current_best[1]
-                best_schedule = deepcopy(current_best[0])
+            # Znajdź aktualnie najlepszy plan
+            current_best_schedule, current_best_score = scores[0]
+
+            # Sprawdź postęp
+            if current_best_score > best_score:
+                best_score = current_best_score
+                best_schedule = deepcopy(current_best_schedule)
                 stagnant_iterations = 0
+
                 self.logger.log_info(f"Iteracja {iteration}: Nowy najlepszy wynik {best_score:.2f}/100")
             else:
                 stagnant_iterations += 1
 
+            # Diagnostyka postępu
             current_time = time.time()
             if current_time - last_progress_time >= progress_interval:
-                self.logger.log_debug(f"Postęp: iteracja {iteration}/{self.config.max_iterations}, "
-                                      f"najlepszy wynik: {best_score:.2f}/100")
+                self.logger.log_debug(
+                    f"Postęp: iteracja {iteration}/{self.config.max_iterations}, "
+                    f"najlepszy wynik: {best_score:.2f}/100"
+                )
                 last_progress_time = current_time
 
+            # Wczesne zatrzymanie, jeśli brak postępu
             if stagnant_iterations >= self.config.early_stop_iterations:
-                self.logger.log_info(f"Zatrzymano po {iteration} iteracjach z powodu braku postępu")
+                self.logger.log_info(
+                    f"Zatrzymano po {iteration} iteracjach z powodu braku postępu"
+                )
                 if best_schedule:
                     self.schedule = best_schedule
                     return True, iteration
                 return False, iteration
 
+            # Osiągnięto wymagany próg jakości
             if best_score >= self.config.min_score:
                 self.schedule = best_schedule
                 return True, iteration
 
-            # Selekcja i krzyżowanie
+            # Selekcja i krzyżowanie nowej populacji
             new_population = []
             while len(new_population) < self.config.population_size:
+                # Wybierz rodziców metodą ruletki
                 parent1 = self._select_parent(scores)
                 parent2 = self._select_parent(scores)
+
+                # Utwórz potomka przez krzyżowanie
                 child = self._crossover(parent1, parent2)
+
+                # Opcjonalna mutacja
                 if random.random() < self.config.mutation_rate:
                     child = self._mutate(child)
+
                 new_population.append(child)
 
+            # Zaktualizuj populację
             population = new_population
 
-        # Jeśli dotarliśmy tutaj, nie osiągnęliśmy wymaganego wyniku
+        # Jeśli nie osiągnięto wyniku
         if best_schedule:
             self.schedule = best_schedule
-            self.logger.log_warning(f"Nie osiągnięto wymaganego wyniku {self.config.min_score}. "
-                                    f"Najlepszy wynik: {best_score:.2f}/100")
+            self.logger.log_warning(
+                f"Nie osiągnięto wymaganego wyniku {self.config.min_score}. "
+                f"Najlepszy wynik: {best_score:.2f}/100"
+            )
             return False, self.config.max_iterations
 
+        # Całkowite niepowodzenie
         self.logger.log_error("Nie udało się wygenerować planu")
         return False, self.config.max_iterations
 
@@ -641,13 +707,29 @@ class ScheduleGenerator:
             if not self._can_add_subject_at_day(schedule, class_name, day, subject):
                 continue
 
-            # Dla każdego przedmiotu znajdujemy najlepszą godzinę
-            best_hour = self._find_best_hour_for_subject(schedule, day, rooms)
+            # Znajdź dostępne sale dla tego przedmiotu
+            available_rooms = set([
+                room for room in rooms
+                if any(schedule.classrooms[room].is_available(day, hour) for hour in range(1, 10))
+            ])
+
+            # Jeśli nie ma dostępnych sal, przejdź do następnego przedmiotu
+            if not available_rooms:
+                self.logger.log_warning(f"Brak dostępnych sal dla {subject} w dniu {day}")
+                continue
+
+            # Znajdź najlepszą godzinę dla dostępnych sal
+            best_hour = self._find_best_hour_for_subject(schedule, day, available_rooms)
+
+            # Debug: pokaż stan sal przed próbą przydzielenia
+            self.logger.log_debug(
+                f"Próba przydzielenia {subject} w dniu {day}: "
+                f"najlepsza godzina {best_hour}, dostępne sale {available_rooms}"
+            )
 
             # Jeśli znaleźliśmy odpowiednią godzinę, próbujemy dodać lekcję
             if best_hour and self._create_and_add_lesson(schedule, subject, class_name, day, best_hour):
                 required_subjects[subject] -= 1
-                # Dodajemy debug log
                 self.logger.log_debug(
                     f"Przydzielono {subject} dla klasy {class_name} w dniu {day} na godzinie {best_hour}"
                 )
@@ -789,8 +871,6 @@ class ScheduleGenerator:
                 subjects[subject] = hours_per_year[year]
 
         return subjects
-
-    # File: generators/schedule_generator.py
 
     def _create_lesson(self, subject: str, class_name: str, day: int, hour: int,
                        schedule: Schedule) -> Optional[Lesson]:
@@ -938,37 +1018,129 @@ class ScheduleGenerator:
             # Jeśli nie udało się znaleźć nowego miejsca, przywróć
             schedule.add_lesson(lesson)
 
-    # File: generators/schedule_generator.py
+    def _find_best_hour_for_subject(self, schedule: Schedule, day: int, rooms: Union[Set[str], List[str]]) -> Optional[
+        int]:
+        """Znajduje najlepszą godzinę dla przedmiotu wymagającego specjalnej sali"""
+        # Konwersja rooms do listy, jeśli jest to zbiór
+        rooms_list = list(rooms)
 
-    def _find_best_hours_for_pe(self, schedule: Schedule, day: int, rooms: Set[str]) -> List[int]:
-        """Znajduje najlepsze godziny na WF, preferując bloki 2-godzinne"""
-        possible_hours = []
+        try:
+            # Dla WF specjalna logika
+            if any(room in {'SILOWNIA', 'MALA_SALA', 'DUZA_HALA'} for room in rooms_list):
+                # Sprawdź obłożenie każdej z sal gimnastycznych
+                room_occupancy: Dict[str, int] = {
+                    'SILOWNIA': 0,
+                    'MALA_SALA': 0,
+                    'DUZA_HALA': 0
+                }
 
-        for hour in range(1, 9):  # Do 8, bo szukamy bloków 2h
-            # Sprawdź dostępność sal na dwie godziny pod rząd
-            rooms_available = any(
-                schedule.classrooms[room].is_available(day, hour) and
-                schedule.classrooms[room].is_available(day, hour + 1)
+                # Oblicz obecne obłożenie sal
+                for room in rooms_list:
+                    try:
+                        classroom = schedule.classrooms.get(room)
+                        if classroom is None:
+                            self.logger.log_warning(f"Sala {room} nie istnieje w planie")
+                            continue
+
+                        for hour in range(1, 10):
+                            try:
+                                # Use .get() with a default of an empty list to avoid potential errors
+                                lessons = classroom.schedule.get(day, {}).get(hour, [])
+                                room_occupancy[room] += len(lessons)
+                            except (KeyError, IndexError, TypeError) as e:
+                                self.logger.log_error(
+                                    f"Błąd podczas sprawdzania obłożenia sali {room} w godzinie {hour}: {e}")
+                                continue
+
+                    except Exception as e:
+                        self.logger.log_error(f"Nieoczekiwany błąd przy sprawdzaniu sali {room}: {e}")
+                        continue
+
+                # Znajdź sale, które jeszcze mogą przyjąć grupę
+                try:
+                    available_rooms = [
+                        room for room in rooms_list
+                        if room_occupancy.get(room, 0) < {
+                            'SILOWNIA': 1,
+                            'MALA_SALA': 3,
+                            'DUZA_HALA': 6
+                        }.get(room, 0)
+                    ]
+                except Exception as e:
+                    self.logger.log_error(f"Błąd przy określaniu dostępnych sal: {e}")
+                    available_rooms = []
+
+                # Jeśli nie ma dostępnych sal, zwróć najbliższą dostępną godzinę
+                if not available_rooms:
+                    return self._find_fallback_hour(schedule, day, rooms_list)
+
+                # Preferuj środkowe godziny dnia
+                preferred_hours = [3, 4, 5, 6]
+                try:
+                    random.shuffle(preferred_hours)
+                except Exception as e:
+                    self.logger.log_error(f"Błąd podczas losowania godzin: {e}")
+
+                # Sprawdź preferowane godziny
+                for hour in preferred_hours:
+                    if self._is_room_available_for_hour(schedule, day, hour, available_rooms):
+                        return hour
+
+                # Sprawdź pozostałe godziny
+                for hour in [1, 2, 7, 8, 9]:
+                    if self._is_room_available_for_hour(schedule, day, hour, available_rooms):
+                        return hour
+
+            # Standardowa logika dla innych przedmiotów
+            return self._find_standard_hour(schedule, day, rooms_list)
+
+        except Exception as e:
+            self.logger.log_error(f"Nieoczekiwany błąd w _find_best_hour_for_subject: {e}")
+            return None
+
+    def _is_room_available_for_hour(self, schedule: Schedule, day: int, hour: int, rooms: List[str]) -> bool:
+        """Sprawdza dostępność sali dla danej godziny"""
+        try:
+            return any(
+                schedule.classrooms.get(room) is not None and
+                schedule.classrooms[room].is_available(day, hour)
                 for room in rooms
             )
+        except Exception as e:
+            self.logger.log_error(f"Błąd podczas sprawdzania dostępności sali w godzinie {hour}: {e}")
+            return False
 
-            if rooms_available:
-                possible_hours.append(hour)
+    def _find_fallback_hour(self, schedule: Schedule, day: int, rooms: List[str]) -> Optional[int]:
+        """Znajduje alternatywną godzinę, gdy nie ma dostępnych sal"""
+        try:
+            for hour in [3, 4, 5, 6, 1, 2, 7, 8, 9]:
+                if self._is_room_available_for_hour(schedule, day, hour, rooms):
+                    return hour
+            return None
+        except Exception as e:
+            self.logger.log_error(f"Błąd podczas wyszukiwania zastępczej godziny: {e}")
+            return None
 
-        return possible_hours
+    def _find_standard_hour(self, schedule: Schedule, day: int, rooms: Union[Set[str], List[str]]) -> Optional[int]:
+        """Znajduje standardową godzinę dla przedmiotów"""
+        try:
+            # Konwersja rooms do listy, jeśli jest to zbiór
+            rooms_list = list(rooms)
 
-    def _find_best_hour_for_subject(self, schedule: Schedule, day: int, rooms: Set[str]) -> Optional[int]:
-        """Znajduje najlepszą godzinę dla przedmiotu wymagającego specjalnej sali"""
-        for hour in range(2, 8):  # Preferujemy środkowe godziny dnia
-            if any(schedule.classrooms[room].is_available(day, hour) for room in rooms):
-                return hour
+            # Preferuj środkowe godziny dnia
+            for hour in range(2, 8):
+                if self._is_room_available_for_hour(schedule, day, hour, rooms_list):
+                    return hour
 
-        # Jeśli nie znaleziono w preferowanych godzinach, sprawdź pozostałe
-        for hour in [1, 8, 9]:
-            if any(schedule.classrooms[room].is_available(day, hour) for room in rooms):
-                return hour
+            # Jeśli nie znaleziono w preferowanych godzinach, sprawdź pozostałe
+            for hour in [1, 8, 9]:
+                if self._is_room_available_for_hour(schedule, day, hour, rooms_list):
+                    return hour
 
-        return None
+            return None
+        except Exception as e:
+            self.logger.log_error(f"Błąd podczas wyszukiwania standardowej godziny: {e}")
+            return None
 
     def _can_add_lesson_at_time(self, schedule: Schedule, class_name: str,
                                 day: int, hour: int) -> bool:
