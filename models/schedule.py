@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from config import REGULAR_SUBJECTS, WEEKLY_HOURS
+from utils import ScheduleLogger
 from .classroom import Classroom
 from .lesson import Lesson
 from .school_class import SchoolClass
@@ -16,6 +17,9 @@ class Schedule:
     teachers: Dict[str, Teacher] = field(default_factory=dict)
     classrooms: Dict[str, Classroom] = field(default_factory=dict)
     lessons: List[Lesson] = field(default_factory=list)
+
+    def __init__(self):
+        self.logger = ScheduleLogger()
 
     def add_lesson(self, lesson: Lesson) -> bool:
         """Dodaje lekcję do planu"""
@@ -82,10 +86,11 @@ class Schedule:
         # Sprawdź konflikty
         conflicts = self.get_conflicts()
         if conflicts:
-            errors["Konflikty"] = [
-                f"Konflikt: {l1.subject} ({l1.class_name}) i {l2.subject} ({l2.class_name})"
-                for l1, l2 in conflicts
-            ]
+            self.logger.log_warning(f"Znaleziono {len(conflicts)} konfliktów:")
+            for l1, l2 in conflicts[:10]:  # Pokaż pierwsze 10 konfliktów
+                self.logger.log_debug(
+                    f"Konflikt: {l1.subject} ({l1.class_name}) vs {l2.subject} ({l2.class_name})"
+                )
 
         return errors
 

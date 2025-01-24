@@ -17,13 +17,13 @@ from utils.logger import ScheduleLogger
 
 @dataclass
 class GeneratorConfig:
-    max_iterations: int = 500
-    min_score: float = 75.0
-    population_size: int = 50
-    mutation_rate: float = 0.4
-    crossover_rate: float = 0.8
+    max_iterations: int = 1000
+    min_score: float = 60.0
+    population_size: int = 100
+    mutation_rate: float = 0.5
+    crossover_rate: float = 0.5
     elitism_count: int = 5
-    retry_count: int = 5
+    retry_count: int = 10
     early_stop_iterations: int = 20  # Po ilu iteracjach bez poprawy kończymy
     gaps_penalty: float = 20.0
 
@@ -148,6 +148,8 @@ class ScheduleGenerator:
     def _assign_day_lessons(self, class_name: str, day: int, start_hour: int,
                             end_hour: int, required_subjects: Dict[str, int]) -> bool:
         """Przydziela lekcje na dany dzień z lepszym rozkładem godzin"""
+        self.logger.log_info(f"Próba przydzielenia lekcji dla klasy {class_name} w dniu {day}")
+        self.logger.log_debug(f"Dostępne przedmioty: {required_subjects}")
         current_hour = start_hour
         assigned_lessons = 0
 
@@ -171,6 +173,7 @@ class ScheduleGenerator:
         while current_hour < end_hour:
             available_subjects = [(s, h) for s, h in required_subjects.items() if h > 0]
             if not available_subjects:
+                self.logger.log_warning(f"Brak dostępnych przedmiotów dla klasy {class_name} w dniu {day}")
                 break
 
             subject = max(available_subjects, key=lambda x: x[1])[0]
@@ -340,37 +343,41 @@ class ScheduleGenerator:
 
     def generate_schedule(self) -> tuple[bool, int]:
         if not self._validate_resources():
+            self.logger.log_critical("Brak wymaganych zasobów do wygenerowania planu")
             return False, 0
 
-        self.logger.log_info("Rozpoczynamy generowanie planu")
+        try:
+            max_attempts = 10
+            current_attempt = 0
 
-        max_attempts = 10  # Maksymalna liczba prób
-        current_attempt = 0
+            while current_attempt < max_attempts:
+                try:
+                    self.logger.log_info(f"Próba wygenerowania planu: {current_attempt + 1}/{max_attempts}")
 
-        while current_attempt < max_attempts:
-            try:
-                # Resetujemy stan przed każdą próbą
-                self.schedule = Schedule()
-                self.initialize_schedule()
+                    # Resetowanie stanu
+                    self.schedule = Schedule()
+                    self.initialize_schedule()
+                    self._reset_teachers_schedule()
 
-                # Dodatkowe resetowanie nauczycieli
-                self._reset_teachers_schedule()
+                    success, iterations = self._generate_schedule_attempt()
 
-                self.logger.log_info(f"Próba {current_attempt + 1}/{max_attempts}")
+                    if success:
+                        return True, iterations
 
-                success, iterations = self._generate_schedule_attempt()
+                    current_attempt += 1
 
-                if success:
-                    return True, iterations
+                except Exception as e:
+                    self.logger.log_critical(f"Błąd podczas generowania planu (próba {current_attempt}): {str(e)}")
+                    self.logger.log_exception("Szczegóły błędu:", exc_info=e)
+                    current_attempt += 1
 
-                current_attempt += 1
+            self.logger.log_critical("Nie udało się wygenerować planu po wszystkich próbach")
+            return False, max_attempts
 
-            except Exception as e:
-                self.logger.log_error(f"Błąd podczas generowania planu: {str(e)}")
-                current_attempt += 1
-
-        self.logger.log_error("Nie udało się wygenerować planu po wszystkich próbach")
-        return False, max_attempts
+        except Exception as e:
+            self.logger.log_critical(f"Nieoczekiwany błąd podczas generowania planu: {str(e)}")
+            self.logger.log_exception("Pełny ślad błędu:", exc_info=e)
+            return False, 0
 
     def _generate_schedule_attempt(self) -> tuple[bool, int]:
         """

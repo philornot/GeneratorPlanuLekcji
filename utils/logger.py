@@ -89,6 +89,14 @@ class ScheduleLogger:
             for error in errors:
                 logger.error(f"  - {error}")
 
+    def log_critical(self, message: str):
+        """Loguje krytyczne błędy"""
+        logger.critical(message)
+
+    def log_exception(self, message: str, exc_info=True):
+        """Loguje pełne informacje o wyjątkach"""
+        logger.exception(message, exc_info=exc_info)
+
     def log_generation_stats(self, generated_classes: int, total_errors: int):
         """Loguje statystyki generowania planu"""
         duration = datetime.now() - self.start_time
