@@ -85,8 +85,11 @@ class ScheduleGenerator:
         if not population:
             return 0.0
 
-        # Konwertuj osobniki na hashowalne tuple
-        unique_individuals = set(tuple(ind) for ind in population)
+        # Zamieniamy każdy element osobnika na tuple, żeby był hashowalny
+        unique_individuals = set(
+            tuple(tuple(lesson) for lesson in ind)
+            for ind in population
+        )
         return len(unique_individuals) / len(population)
 
     def crossover(self, ind1: List, ind2: List) -> Tuple[List, List]:

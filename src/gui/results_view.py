@@ -1,10 +1,13 @@
 # src/gui/results_view.py
+import logging
+from typing import Dict, List
 
 import customtkinter as ctk
-from typing import Dict, List
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+logger = logging.getLogger(__name__)
 
 
 class ScheduleResultsWindow(ctk.CTkToplevel):
@@ -35,42 +38,108 @@ class ScheduleResultsWindow(ctk.CTkToplevel):
         class_label = ctk.CTkLabel(filters_frame, text="Klasa:")
         class_label.pack(side='left', padx=5)
 
+        # Konwertujemy set na posortowaną listę
+        class_list = sorted(list(schedule.class_groups))
+
+        if not class_list:
+            logger.error("Brak klas w planie!")
+            return
+
         class_select = ctk.CTkOptionMenu(
             filters_frame,
-            values=sorted(list(schedule.class_groups)),
+            values=class_list,
             command=lambda c: self.update_schedule_view(schedule, selected_class=c)
         )
         class_select.pack(side='left', padx=5)
 
-        # Tabela z planem
-        table_frame = ctk.CTkFrame(schedule_tab)
-        table_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        # Frame na siatkę
+        grid_frame = ctk.CTkFrame(schedule_tab, fg_color="gray30")
+        grid_frame.pack(fill='both', expand=True, padx=5, pady=5)
 
-        # Nagłówki
-        headers = ["Godzina"] + [f"Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
+        # Nagłówki w siatce
+        headers = ["Godzina"] + ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
         for col, header in enumerate(headers):
-            label = ctk.CTkLabel(table_frame, text=header, font=("Helvetica", 12, "bold"))
-            label.grid(row=0, column=col, sticky='nsew', padx=1, pady=1)
+            # Dodaj ramkę dla każdej komórki nagłówka
+            cell_frame = ctk.CTkFrame(grid_frame, fg_color="gray20")
+            cell_frame.grid(row=0, column=col, sticky='nsew', padx=1, pady=1)
+
+            label = ctk.CTkLabel(cell_frame, text=header, font=("Helvetica", 12, "bold"))
+            label.pack(expand=True, fill='both', padx=5, pady=5)
 
         # Godziny lekcji
         hours = ["8:00-8:45", "8:55-9:40", "9:50-10:35", "10:55-11:40",
                  "11:50-12:35", "12:45-13:30", "13:40-14:25", "14:35-15:20"]
 
-        for row, hour in enumerate(hours, 1):
-            label = ctk.CTkLabel(table_frame, text=hour)
-            label.grid(row=row, column=0, sticky='nsew', padx=1, pady=1)
-
         # Inicjalizacja komórek tabeli
         self.schedule_cells = {}
-        for row in range(1, len(hours) + 1):
-            for col in range(1, len(headers)):
-                cell = ctk.CTkLabel(table_frame, text="", width=150)
-                cell.grid(row=row, column=col, sticky='nsew', padx=1, pady=1)
-                self.schedule_cells[(row - 1, col - 1)] = cell
+        for row in range(len(hours)):
+            # Dodaj godziny w pierwszej kolumnie
+            hour_frame = ctk.CTkFrame(grid_frame, fg_color="gray20")
+            hour_frame.grid(row=row + 1, column=0, sticky='nsew', padx=1, pady=1)
 
-        # Pokaż plan dla pierwszej klasy
-        if schedule.class_groups:
-            self.update_schedule_view(schedule, schedule.class_groups[0])
+            hour_label = ctk.CTkLabel(hour_frame, text=hours[row])
+            hour_label.pack(expand=True, fill='both', padx=5, pady=5)
+
+            # Dodaj komórki na lekcje
+            for col in range(1, len(headers)):
+                cell_frame = ctk.CTkFrame(grid_frame, fg_color="gray20")
+                cell_frame.grid(row=row + 1, column=col, sticky='nsew', padx=1, pady=1)
+
+                cell = ctk.CTkLabel(cell_frame, text="", width=150)
+                cell.pack(expand=True, fill='both', padx=5, pady=5)
+                self.schedule_cells[(row, col - 1)] = cell
+
+        # Konfiguracja rozmiaru kolumn/wierszy
+        for i in range(len(headers)):
+            grid_frame.grid_columnconfigure(i, weight=1)
+        for i in range(len(hours) + 1):
+            grid_frame.grid_rowconfigure(i, weight=1)
+
+    def setup_statistics_view(self, schedule: 'Schedule'):
+        """Tworzy widok statystyk"""
+        stats_tab = self.tabview.add("Statystyki")
+
+        # Główny kontener na statystyki
+        main_frame = ctk.CTkFrame(stats_tab)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # Podstawowe informacje
+        basic_frame = self._create_stats_section(main_frame, "Podstawowe informacje")
+        ctk.CTkLabel(basic_frame, text=f"Liczba klas: {len(schedule.class_groups)}").pack(anchor='w')
+        ctk.CTkLabel(basic_frame, text=f"Całkowita liczba lekcji: {len(schedule.lessons)}").pack(anchor='w')
+
+        # Statystyki nauczycieli
+        teacher_frame = self._create_stats_section(main_frame, "Obciążenie nauczycieli")
+        total_hours = 0
+        for teacher in self.school.teachers.values():
+            hours = schedule.get_teacher_hours(teacher)
+            total_hours += hours['weekly']
+            text = f"{teacher.name}: {hours['weekly']}h/tydzień (max dzienny: {max(hours['daily'].values() if hours['daily'] else [0])}h)"
+            ctk.CTkLabel(teacher_frame, text=text).pack(anchor='w')
+
+        avg_hours = total_hours / len(self.school.teachers) if self.school.teachers else 0
+        ctk.CTkLabel(teacher_frame, text=f"Średnie obciążenie: {avg_hours:.1f}h/tydzień").pack(anchor='w')
+
+        # Statystyki sal
+        room_frame = self._create_stats_section(main_frame, "Wykorzystanie sal")
+        for classroom in self.school.classrooms.values():
+            count = sum(1 for lesson in schedule.lessons if lesson.classroom.id == classroom.id)
+            usage = (count / (40)) * 100  # 40 = 8 godzin * 5 dni
+            text = f"Sala {classroom.name}: {count} lekcji ({usage:.1f}% wykorzystania)"
+            ctk.CTkLabel(room_frame, text=text).pack(anchor='w')
+
+    def _create_stats_section(self, parent, title: str) -> ctk.CTkFrame:
+        """Tworzy sekcję statystyk z tytułem"""
+        frame = ctk.CTkFrame(parent)
+        frame.pack(fill='x', padx=5, pady=5)
+
+        ctk.CTkLabel(
+            frame,
+            text=title,
+            font=("Helvetica", 12, "bold")
+        ).pack(pady=5)
+
+        return frame
 
     def update_schedule_view(self, schedule: 'Schedule', selected_class: str):
         """Aktualizuje widok planu dla wybranej klasy"""
