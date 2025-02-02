@@ -158,34 +158,47 @@ class FitnessEvaluator:
 
     def _evaluate_completeness(self, schedule: Schedule) -> Tuple[float, Dict, Dict]:
         """Ocena kompletności planu"""
+        logger.debug(f"Rozpoczynam ocenę kompletności dla planu z {len(schedule.class_groups)} klasami")
+
         penalties = {}
         rewards = {}
         base_score = 100.0
 
-        # Sprawdzenie wymaganych godzin dla każdej klasy
         for class_group in schedule.class_groups:
+            logger.debug(f"Sprawdzam klasę: {class_group}")
             class_hours = schedule.get_class_hours(class_group)
+            logger.debug(f"Aktualny rozkład godzin: {class_hours}")
 
-            for subject in self.required_hours[class_group.name]:
+            for subject in self.required_hours[class_group]:
                 required = subject.hours_per_week
                 actual = class_hours.get(subject.name, 0)
 
+                logger.debug(f"Przedmiot {subject.name}: wymagane {required}, aktualne {actual}")
+
                 if actual < required:
                     penalty = 10 * (required - actual)
-                    penalties[f"missing_hours_{class_group.name}_{subject.name}"] = penalty
+                    penalties[f"missing_hours_{class_group}_{subject.name}"] = penalty
                     base_score -= penalty
+                    logger.debug(f"Kara za brak godzin: -{penalty}")
                 elif actual > required:
                     penalty = 5 * (actual - required)
-                    penalties[f"excess_hours_{class_group.name}_{subject.name}"] = penalty
+                    penalties[f"excess_hours_{class_group}_{subject.name}"] = penalty
                     base_score -= penalty
+                    logger.debug(f"Kara za nadmiar godzin: -{penalty}")
 
         # Sprawdzenie rozkładu lekcji
         distribution_score = self._check_distribution_quality(schedule)
         if distribution_score > 0:
             rewards['good_distribution'] = distribution_score
             base_score = min(100, base_score + distribution_score)
+            logger.debug(f"Nagroda za dobry rozkład: +{distribution_score}")
 
-        return max(0, base_score), penalties, rewards
+        final_score = max(0, base_score)
+        logger.debug(f"Końcowy wynik kompletności: {final_score}")
+        logger.debug(f"Kary: {penalties}")
+        logger.debug(f"Nagrody: {rewards}")
+
+        return final_score, penalties, rewards
 
     def _evaluate_load_balance(self, schedule: Schedule) -> Tuple[float, Dict, Dict]:
         """Ocena równomiernego obciążenia"""
@@ -242,18 +255,23 @@ class FitnessEvaluator:
         """Sprawdza jakość rozkładu lekcji"""
         score = 0.0
 
+        # Zmiana: class_group jest już nazwą klasy (stringiem)
         for class_group in schedule.class_groups:
+            logger.debug(f"Sprawdzam rozkład lekcji dla klasy: {class_group}")
             daily_lessons = defaultdict(list)
 
-            # Grupuj lekcje po dniach
-            for lesson in schedule.get_class_lessons(class_group.name):
+            # Grupuj lekcje po dniach - używamy bezpośrednio class_group bo to string
+            for lesson in schedule.get_class_lessons(class_group):
                 daily_lessons[lesson.day].append(lesson)
+
+            logger.debug(f"Rozkład dzienny: {len(daily_lessons)} dni")
 
             # Ocena każdego dnia
             for day_lessons in daily_lessons.values():
                 # Sprawdź różnorodność przedmiotów
                 unique_subjects = len({lesson.subject.name for lesson in day_lessons})
                 score += unique_subjects * 0.5
+                logger.debug(f"Różnorodność przedmiotów: {unique_subjects} (+{unique_subjects * 0.5})")
 
                 # Kara za zbyt dużo tego samego przedmiotu w jeden dzień
                 subject_counts = defaultdict(int)
@@ -261,36 +279,50 @@ class FitnessEvaluator:
                     subject_counts[lesson.subject.name] += 1
                     if subject_counts[lesson.subject.name] > 2:
                         score -= 1
+                        logger.debug(f"Kara za powtórzenia przedmiotu {lesson.subject.name} (-1)")
 
                 # Sprawdź przerwy między lekcjami
                 hours = sorted(lesson.hour for lesson in day_lessons)
                 for i in range(1, len(hours)):
                     if hours[i] - hours[i - 1] > 1:  # przerwa większa niż 1 godzina
                         score -= 0.5
+                        logger.debug(f"Kara za przerwę między {hours[i - 1]} a {hours[i]} (-0.5)")
 
+        logger.debug(f"Końcowy wynik rozkładu: {score}")
         return score
 
     def _check_teacher_load(self, schedule: Schedule) -> float:
         """Sprawdza równomierność obciążenia nauczycieli"""
         score = 0.0
 
-        for teacher in self.teachers:
+        # Zmiana: iterujemy po wartościach słownika teachers
+        for teacher in self.teachers.values():
+            logger.debug(f"Sprawdzam obciążenie nauczyciela: {teacher.name}")
             hours = schedule.get_teacher_hours(teacher)
 
             # Sprawdź dzienny limit
-            for day_hours in hours['daily'].values():
+            for day, day_hours in hours['daily'].items():
                 if day_hours > teacher.max_hours_per_day:
-                    score -= (day_hours - teacher.max_hours_per_day) * 2
+                    penalty = (day_hours - teacher.max_hours_per_day) * 2
+                    score -= penalty
+                    logger.debug(
+                        f"Dzień {day}: Przekroczony dzienny limit o {day_hours - teacher.max_hours_per_day} (-{penalty})")
                 elif day_hours == teacher.max_hours_per_day:
                     score += 1
+                    logger.debug(f"Dzień {day}: Optymalne wykorzystanie (+1)")
 
             # Sprawdź tygodniowy limit
             weekly_hours = hours['weekly']
             if weekly_hours > teacher.max_hours_per_week:
-                score -= (weekly_hours - teacher.max_hours_per_week) * 3
+                penalty = (weekly_hours - teacher.max_hours_per_week) * 3
+                score -= penalty
+                logger.debug(
+                    f"Przekroczony tygodniowy limit o {weekly_hours - teacher.max_hours_per_week} (-{penalty})")
             elif weekly_hours >= teacher.max_hours_per_week * 0.8:
                 score += 2
+                logger.debug(f"Optymalne obciążenie tygodniowe (+2)")
 
+        logger.debug(f"Końcowy wynik obciążenia nauczycieli: {score}")
         return score
 
     def _check_room_usage(self, schedule: Schedule) -> float:
@@ -303,16 +335,25 @@ class FitnessEvaluator:
             room_usage[lesson.classroom.id] += 1
 
         # Ocena wykorzystania
-        max_possible_hours = self.school.days * self.school.hours_per_day
-        for room_id, usage in room_usage.items():
+        # Poprawka: Dodajemy sprawdzenie czy szkoła ma te atrybuty
+        max_possible_hours = getattr(self.school, 'days', 5) * getattr(self.school, 'hours_per_day', 8)
+
+        # Poprawka: iterujemy po wartościach słownika classrooms
+        for classroom in self.school.classrooms.values():
+            usage = room_usage[classroom.id]
             usage_percent = usage / max_possible_hours * 100
 
-            if usage_percent < 30:  # zbyt małe wykorzystanie
+            logger.debug(f"Sala {classroom.name}: wykorzystanie {usage_percent:.1f}%")
+
+            if usage_percent < 30:
                 score -= 2
-            elif usage_percent > 80:  # zbyt duże wykorzystanie
+                logger.debug(f"Kara za małe wykorzystanie (-2)")
+            elif usage_percent > 80:
                 score -= 1
-            elif 50 <= usage_percent <= 70:  # optymalne wykorzystanie
+                logger.debug(f"Kara za przeciążenie (-1)")
+            elif 50 <= usage_percent <= 70:
                 score += 2
+                logger.debug(f"Nagroda za optymalne wykorzystanie (+2)")
 
         return score
 
@@ -325,16 +366,20 @@ class FitnessEvaluator:
         for lesson in schedule.lessons:
             teacher_subjects[lesson.teacher.id].add(lesson.subject.name)
 
-        # Ocena specjalizacji
-        for teacher_id, subjects in teacher_subjects.items():
-            teacher = next(t for t in self.teachers if t.id == teacher_id)
+        # Poprawka: używamy values() zamiast iteracji po kluczach
+        for teacher in self.teachers.values():
+            subjects = teacher_subjects[teacher.id]
+            logger.debug(f"Nauczyciel {teacher.name}: uczy przedmiotów {subjects}")
 
             # Nagroda za nauczanie przedmiotów zgodnych ze specjalizacją
             matching_subjects = subjects.intersection(set(teacher.subjects))
             score += len(matching_subjects) * 2
+            logger.debug(f"Zgodne przedmioty: {matching_subjects} (+{len(matching_subjects) * 2})")
 
             # Kara za zbyt wiele różnych przedmiotów
             if len(subjects) > 3:
-                score -= (len(subjects) - 3)
+                penalty = (len(subjects) - 3)
+                score -= penalty
+                logger.debug(f"Kara za zbyt wiele przedmiotów (-{penalty})")
 
         return score

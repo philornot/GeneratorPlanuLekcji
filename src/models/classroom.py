@@ -1,7 +1,7 @@
 # src/models/classroom.py
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List
 
 
 @dataclass
@@ -21,3 +21,13 @@ class Classroom:
         if not subject.requires_special_classroom:
             return True
         return subject.special_classroom_type == self.room_type
+
+    def __hash__(self):
+        """Używamy id jako hash"""
+        return hash(self.id)
+
+    def __eq__(self, other):
+        """Porównujemy sale po id"""
+        if not isinstance(other, Classroom):
+            return NotImplemented
+        return self.id == other.id

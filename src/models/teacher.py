@@ -1,8 +1,8 @@
 # src/models/teacher.py
 
-from dataclasses import dataclass
-from typing import List, Dict
 import logging
+from dataclasses import dataclass
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -21,3 +21,13 @@ class Teacher:
     def can_teach(self, subject: str) -> bool:
         """Sprawdza czy nauczyciel może uczyć danego przedmiotu"""
         return subject in self.subjects
+
+    def __hash__(self):
+        """Używamy id jako hash, bo jest unikalne"""
+        return hash(self.id)
+
+    def __eq__(self, other):
+        """Porównujemy nauczycieli po id"""
+        if not isinstance(other, Teacher):
+            return NotImplemented
+        return self.id == other.id

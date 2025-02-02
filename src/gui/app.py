@@ -1,18 +1,43 @@
 # src/gui/app.py
+import json
+import logging
 import threading
+from pathlib import Path
 from tkinter import messagebox
+from typing import List, Dict
 
 import customtkinter as ctk
 import sv_ttk
-from typing import Callable, List, Dict
-import json
-from pathlib import Path
-import logging
 
 from src.algorithms.genetic import ScheduleGenerator
+from src.gui.input_frame import SchoolInputFrame
+from src.gui.results_view import ScheduleResultsWindow
 from src.models.schedule import Schedule
+from src.models.school import School
 
 logger = logging.getLogger(__name__)
+
+
+class ProgressWindow(ctk.CTkToplevel):
+    def __init__(self):
+        super().__init__()
+        self.title("Postęp generowania planu")
+        self.geometry("400x150")
+
+        # Etykieta z opisem
+        self.status_label = ctk.CTkLabel(self, text="Inicjalizacja...")
+        self.status_label.pack(pady=10)
+
+        # Pasek postępu
+        self.progress_bar = ctk.CTkProgressBar(self)
+        self.progress_bar.pack(pady=10, padx=20, fill='x')
+        self.progress_bar.set(0)
+
+    def update_progress(self, progress: float, status_text: str):
+        """Aktualizuje pasek postępu i tekst statusu"""
+        self.progress_bar.set(progress / 100)  # progress jest od 0 do 100
+        self.status_label.configure(text=status_text)
+        self.update()  # odśwież okno
 
 
 class SchedulerGUI(ctk.CTk):
@@ -52,17 +77,87 @@ class SchedulerGUI(ctk.CTk):
         value_label = ctk.CTkLabel(frame, text=str(default_val))
         value_label.pack(side='right', padx=10)
 
+        def on_slider_change(val):
+            # Zaokrąglij wartość do rozsądnej liczby miejsc po przecinku
+            rounded_val = round(val, 3)  # 3 miejsca po przecinku powinno wystarczyć
+            value_label.configure(text=f"{rounded_val:.3f}")
+            current_values = self.get_current_values()
+            self.save_config(current_values)
+            logger.debug(f"Saved new configuration: {current_values}")
+
         slider = ctk.CTkSlider(
             frame,
             from_=min_val,
             to=max_val,
             number_of_steps=int((max_val - min_val) / step),
-            command=lambda val: value_label.configure(text=f"{val:.2f}"),
+            command=on_slider_change,
         )
         slider.pack(fill='x', padx=10)
         slider.set(default_val)
 
         return slider
+
+    def create_params_frame(self, parent) -> ctk.CTkFrame:
+        """Tworzy ramkę z parametrami algorytmu"""
+        frame = ctk.CTkFrame(parent)
+
+        # Nagłówek
+        header = ctk.CTkLabel(
+            frame,
+            text="Parametry algorytmu",
+            font=("Helvetica", 16, "bold")
+        )
+        header.pack(pady=10)
+
+        # Slider dla liczby iteracji
+        self.iterations_slider = self.create_parameter_slider(
+            frame,
+            "Liczba iteracji:",
+            min_val=100,
+            max_val=5000,
+            default_val=self.values['iterations'],
+            step=100
+        )
+
+        # Slider dla wielkości populacji
+        self.population_slider = self.create_parameter_slider(
+            frame,
+            "Wielkość populacji:",
+            min_val=50,
+            max_val=500,
+            default_val=self.values['population_size'],
+            step=10
+        )
+
+        # Slider dla współczynnika mutacji
+        self.mutation_slider = self.create_parameter_slider(
+            frame,
+            "Współczynnik mutacji:",
+            min_val=0.01,
+            max_val=0.5,
+            default_val=self.values['mutation_rate'],
+            step=0.01
+        )
+
+        # Slider dla współczynnika krzyżowania
+        self.crossover_slider = self.create_parameter_slider(
+            frame,
+            "Współczynnik krzyżowania:",
+            min_val=0.1,
+            max_val=1.0,
+            default_val=self.values['crossover_rate'],
+            step=0.05
+        )
+
+        # Przycisk resetowania
+        reset_button = ctk.CTkButton(
+            frame,
+            text="Reset do domyślnych",
+            command=self.reset_values
+        )
+        reset_button.pack(pady=10)
+
+        return frame
 
     def load_config(self) -> dict:
         """Wczytuje zapisaną konfigurację lub zwraca domyślne wartości"""
@@ -131,6 +226,12 @@ class SchedulerGUI(ctk.CTk):
         )
         self.run_button.pack(pady=10)
 
+    def create_progress_window(self) -> ProgressWindow:
+        """Tworzy i zwraca okno postępu"""
+        progress_window = ProgressWindow()
+        progress_window.grab_set()  # blokuje interakcję z głównym oknem
+        return progress_window
+
     def run_scheduler(self):
         """Uruchamia generowanie planu"""
         school_config = self.school_frame.get_configuration()
@@ -155,14 +256,17 @@ class SchedulerGUI(ctk.CTk):
 
         # Uruchom generowanie w osobnym wątku
         thread = threading.Thread(
-            target=lambda: self.run_generation(generator, update_progress)
+            target=lambda: self.run_generation(generator, update_progress, progress_window)
         )
         thread.start()
 
-    def run_generation(self, generator: ScheduleGenerator, progress_callback):
+    def run_generation(self, generator: ScheduleGenerator, progress_callback, progress_window):
         """Uruchamia generowanie planu w osobnym wątku"""
         try:
             schedule, progress_history = generator.generate(progress_callback)
+
+            # Zamknij okno postępu
+            progress_window.destroy()
 
             # Pokaż wyniki
             self.show_results(schedule, progress_history)
@@ -170,6 +274,7 @@ class SchedulerGUI(ctk.CTk):
         except Exception as e:
             logger.error(f"Error during generation: {e}", exc_info=True)
             messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {str(e)}")
+            progress_window.destroy()
 
     def show_results(self, schedule: Schedule, progress_history: List[Dict]):
         """Pokazuje okno z wynikami"""

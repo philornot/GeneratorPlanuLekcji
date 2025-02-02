@@ -21,7 +21,11 @@ class ScheduleGenerator:
     def __init__(self, school: School, params: Dict):
         self.school = school
         self.params = params
-        self.evaluator = FitnessEvaluator()
+        self.evaluator = FitnessEvaluator(school=school, config=params)
+
+        # Stałe czasowe
+        self.DAYS = 5  # Poniedziałek-Piątek
+        self.HOURS_PER_DAY = 8  # 8 godzin lekcyjnych dziennie
 
         # Parametry adaptacyjne
         self.adaptive_rates = {
@@ -39,6 +43,19 @@ class ScheduleGenerator:
 
         # Cache dla ocen
         self.fitness_cache = {}
+
+        # Dodajemy pole na najlepsze znane rozwiązanie
+        self.best_known_solution = None
+        try:
+            best_solution_path = Path('data/best_solution.json')
+            if best_solution_path.exists():
+                with open(best_solution_path, 'r') as f:
+                    data = json.load(f)
+                    self.best_known_solution = data['solution']
+                    logger.info(f"Loaded best known solution with fitness: {data['fitness']}")
+        except Exception as e:
+            logger.error(f"Error loading best solution: {e}")
+            self.best_known_solution = None
 
         # Inicjalizacja DEAP
         self.setup_deap()
@@ -72,22 +89,24 @@ class ScheduleGenerator:
         unique_individuals = set(tuple(ind) for ind in population)
         return len(unique_individuals) / len(population)
 
-    def intelligent_crossover(self, ind1: List, ind2: List) -> Tuple[List, List]:
-        """Zaawansowany operator krzyżowania"""
+    def crossover(self, ind1: List, ind2: List) -> Tuple[List, List]:
+        """Operator krzyżowania"""
         size = len(ind1)
 
         # Znajdź dobre segmenty (bez konfliktów)
         good_segments1 = self.find_good_segments(ind1)
         good_segments2 = self.find_good_segments(ind2)
 
-        # Stwórz nowe osobniki
-        child1, child2 = ind1.copy(), ind2.copy()
+        # Stwórz nowe osobniki - używamy creator.Individual zamiast zwykłych list
+        child1 = creator.Individual(ind1.copy())
+        child2 = creator.Individual(ind2.copy())
 
         # Wymień dobre segmenty między osobnikami
         for (start1, end1), (start2, end2) in zip(good_segments1, good_segments2):
             if random.random() < 0.5:  # 50% szans na wymianę
-                child1[start1:end1], child2[start2:end2] = \
-                    ind2[start2:end2], ind1[start1:end1]
+                temp = child1[start1:end1]
+                child1[start1:end1] = child2[start2:end2]
+                child2[start2:end2] = temp
 
         return child1, child2
 
@@ -106,11 +125,14 @@ class ScheduleGenerator:
 
         return segments
 
-    def smart_mutation(self, individual: List) -> List:
-        """Inteligentna mutacja uwzględniająca konflikty"""
+    def mutation(self, individual: List) -> List:
+        """Mutacja uwzględniająca konflikty"""
+        # Tworzymy kopię osobnika jako creator.Individual
+        mutant = creator.Individual(individual[:])
+
         # Znajdź problematyczne miejsca
         conflict_indices = []
-        for i, lesson in enumerate(individual):
+        for i, lesson in enumerate(mutant):
             if self.check_conflicts([lesson]):
                 conflict_indices.append(i)
 
@@ -118,14 +140,14 @@ class ScheduleGenerator:
         if conflict_indices:
             for idx in conflict_indices:
                 if random.random() < 0.8:  # 80% szans na naprawę konfliktu
-                    individual[idx] = self.generate_repair_lesson(individual, idx)
+                    mutant[idx] = self.generate_repair_lesson(mutant, idx)
         else:
             # Jeśli nie ma konfliktów, wykonaj standardową mutację
-            for i in range(len(individual)):
+            for i in range(len(mutant)):
                 if random.random() < self.adaptive_rates['mutation']['current']:
-                    individual[i] = self.random_lesson_slot()
+                    mutant[i] = self.random_lesson_slot()
 
-        return individual
+        return mutant
 
     def generate_repair_lesson(self, individual: List, index: int) -> Tuple:
         """Generuje nową lekcję unikając konfliktów"""
@@ -169,11 +191,11 @@ class ScheduleGenerator:
     def local_search(self, individual: List) -> List:
         """Wykonuje lokalne przeszukiwanie"""
         best_fitness = self.evaluate_schedule(individual)[0]
-        best_solution = individual[:]
+        best_solution = creator.Individual(individual[:])
 
         for _ in range(10):  # 10 prób poprawy
             # Wygeneruj sąsiada
-            neighbor = best_solution[:]
+            neighbor = creator.Individual(best_solution[:])
 
             # Małe zmiany w losowych miejscach
             for _ in range(3):
@@ -228,7 +250,7 @@ class ScheduleGenerator:
             # Krzyżowanie
             for i in range(1, len(offspring), 2):
                 if random.random() < self.adaptive_rates['crossover']['current']:
-                    offspring[i - 1], offspring[i] = self.intelligent_crossover(
+                    offspring[i - 1], offspring[i] = self.crossover(
                         offspring[i - 1], offspring[i]
                     )
                     del offspring[i - 1].fitness.values
@@ -237,7 +259,7 @@ class ScheduleGenerator:
             # Mutacja
             for i in range(len(offspring)):
                 if random.random() < mut_rate:
-                    offspring[i] = self.smart_mutation(offspring[i])
+                    offspring[i] = self.mutation(offspring[i])
                     del offspring[i].fitness.values
 
             # Lokalna optymalizacja
@@ -309,7 +331,7 @@ class ScheduleGenerator:
         # Operatory genetyczne
         self.toolbox.register("evaluate", self.evaluate_schedule)
         self.toolbox.register("mate", tools.cxTwoPoint)
-        self.toolbox.register("mutate", self.smart_mutation)
+        self.toolbox.register("mutate", self.mutation)
         self.toolbox.register("select", tools.selTournament, tournsize=3)
 
     def calculate_total_lessons(self) -> int:
@@ -322,25 +344,47 @@ class ScheduleGenerator:
 
     def random_lesson_slot(self) -> Tuple[int, int, str, str, int, int]:
         """Generuje losowy slot lekcyjny (dzień, godzina, klasa, przedmiot, nauczyciel, sala)"""
-        day = random.randint(0, self.DAYS - 1)
-        hour = random.randint(0, self.HOURS_PER_DAY - 1)
+        max_attempts = 50
 
-        # Wybierz losową klasę i jej przedmiot
-        class_group = random.choice(self.school.class_groups)
-        subject = random.choice(class_group.subjects)
+        for _ in range(max_attempts):
+            day = random.randint(0, self.DAYS - 1)
+            hour = random.randint(0, self.HOURS_PER_DAY - 1)
 
-        # Znajdź odpowiedniego nauczyciela i salę
-        available_teachers = [t for t in self.school.teachers if subject.name in t.subjects]
-        teacher = random.choice(available_teachers) if available_teachers else None
+            if not self.school.class_groups:
+                raise ValueError("Brak zdefiniowanych grup klasowych")
 
-        suitable_rooms = [r for r in self.school.classrooms if r.is_suitable_for_subject(subject)]
-        classroom = random.choice(suitable_rooms) if suitable_rooms else None
+            # Poprawka: dodajemy więcej logów
+            logger.debug(f"Próba wygenerowania slotu: dzień {day}, godzina {hour}")
 
-        if not teacher or not classroom:
-            logger.warning(f"Couldn't find teacher or classroom for {subject.name}")
-            return self.random_lesson_slot()  # Spróbuj ponownie
+            class_group = random.choice(self.school.class_groups)
+            if not class_group.subjects:
+                logger.error(f"Klasa {class_group.name} nie ma przypisanych przedmiotów")
+                raise ValueError(f"Brak przedmiotów dla grupy {class_group.name}")
 
-        return (day, hour, class_group.name, subject.name, teacher.id, classroom.id)
+            subject = random.choice(class_group.subjects)
+            logger.debug(f"Wylosowano: klasa {class_group.name}, przedmiot {subject.name}")
+
+            # Znajdź odpowiedniego nauczyciela i salę
+            available_teachers = [t for t in self.school.teachers.values()
+                                  if subject.name in t.subjects]
+            suitable_rooms = [r for r in self.school.classrooms.values()
+                              if r.is_suitable_for_subject(subject)]
+
+            if not available_teachers:
+                logger.error(f"Brak nauczycieli mogących uczyć przedmiotu {subject.name}")
+                continue
+
+            if not suitable_rooms:
+                logger.error(f"Brak odpowiednich sal dla przedmiotu {subject.name}")
+                continue
+
+            teacher = random.choice(available_teachers)
+            classroom = random.choice(suitable_rooms)
+            logger.debug(f"Przydzielono: nauczyciel {teacher.name}, sala {classroom.name}")
+
+            return (day, hour, class_group.name, subject.name, teacher.id, classroom.id)
+
+        raise ValueError(f"Nie udało się wygenerować poprawnego slotu po {max_attempts} próbach")
 
     def check_conflicts(self, lessons: List[Tuple]) -> bool:
         """Sprawdza czy występują konflikty między lekcjami"""
@@ -360,13 +404,30 @@ class ScheduleGenerator:
         return False
 
     def convert_to_schedule(self, individual: List) -> Schedule:
-        """Konwertuje osobnika na obiekt Schedule"""
+        """Konwertuje indywiduum na obiekt Schedule"""
         schedule = Schedule()
 
         for day, hour, class_name, subject_name, teacher_id, classroom_id in individual:
-            teacher = next(t for t in self.school.teachers if t.id == teacher_id)
-            classroom = next(r for r in self.school.classrooms if r.id == classroom_id)
-            subject = next(s for s in self.school.subjects if s.name == subject_name)
+            try:
+                # Poprawka: szukamy nauczyciela bezpośrednio po kluczu w słowniku
+                teacher = self.school.teachers[teacher_id]  # zamiast używać next()
+            except KeyError:
+                logger.error(f"Nie znaleziono nauczyciela o id: {teacher_id}")
+                raise ValueError(f"Nieprawidłowe id nauczyciela: {teacher_id}")
+
+            try:
+                # To samo dla sal
+                classroom = self.school.classrooms[classroom_id]  # używamy bezpośredniego dostępu
+            except KeyError:
+                logger.error(f"Nie znaleziono sali o id: {classroom_id}")
+                raise ValueError(f"Nieprawidłowe id sali: {classroom_id}")
+
+            try:
+                subject = next(s for s in self.school.subjects.values() if s.name == subject_name)
+            except StopIteration:
+                logger.error(f"Nie znaleziono przedmiotu o nazwie: {subject_name}")
+                logger.error(f"Dostępne przedmioty: {[s.name for s in self.school.subjects.values()]}")
+                raise ValueError(f"Nieprawidłowa nazwa przedmiotu: {subject_name}")
 
             schedule.add_lesson(
                 Lesson(

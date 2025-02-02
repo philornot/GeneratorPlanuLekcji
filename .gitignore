@@ -1,2 +1,6 @@
 /.idea/
 /.venv/
+/src/logs/
+/src/data/config.json
+/src/data/school_config.json
+/src/data/best_parameters.json
