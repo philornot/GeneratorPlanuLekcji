@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import List, Dict, Set
 
+from src.models.classroom import Classroom
 from src.models.lesson import Lesson
 from src.models.teacher import Teacher
 
@@ -14,6 +15,12 @@ logger = logging.getLogger(__name__)
 class Schedule:
     lessons: List[Lesson] = field(default_factory=list)
     class_groups: Set[str] = field(default_factory=set)
+    school: 'School' = None  # Dodajemy atrybut school
+
+    def __init__(self, school: 'School' = None):
+        self.lessons = []
+        self.class_groups = set()
+        self.school = school
 
     def get_class_lessons(self, class_name: str) -> List[Lesson]:
         """Zwraca wszystkie lekcje dla danej klasy"""
@@ -44,10 +51,15 @@ class Schedule:
             'weekly': weekly_total
         }
 
+    # src/models/schedule.py
     def add_lesson(self, lesson: Lesson) -> bool:
-        """Dodaje lekcję do planu jeśli nie powoduje konfliktów"""
+        """Dodaje lekcję do planu, jeśli nie powoduje konfliktów"""
         if not isinstance(lesson, Lesson):
             logger.error(f"Próba dodania nieprawidłowej lekcji: {lesson}")
+            return False
+
+        if self.school is None:
+            logger.error("Próba dodania lekcji do planu bez zainicjalizowanego obiektu school")
             return False
 
         if not self._check_conflicts(lesson):
@@ -84,3 +96,17 @@ class Schedule:
                 'class_count': len(self.class_groups)
             }
         }
+
+    def get_all_teachers(self) -> Set[Teacher]:
+        """Returns all teachers used in the schedule"""
+        return self.get_used_teachers()  # Reuse existing method
+
+    def get_all_classrooms(self) -> Set[Classroom]:
+        """Returns all classrooms used in the schedule"""
+        return {lesson.classroom for lesson in self.lessons}
+
+    def get_classroom_usage(self, classroom: Classroom) -> float:
+        """Calculates classroom usage percentage"""
+        usage = sum(1 for lesson in self.lessons if lesson.classroom == classroom)
+        total_slots = 40  # 8 hours * 5 days
+        return (usage / total_slots) * 100

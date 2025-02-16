@@ -260,21 +260,22 @@ class SchedulerGUI(ctk.CTk):
         )
         thread.start()
 
+    # src/gui/app.py
     def run_generation(self, generator: ScheduleGenerator, progress_callback, progress_window):
         """Uruchamia generowanie planu w osobnym wątku"""
         try:
             schedule, progress_history = generator.generate(progress_callback)
 
             # Zamknij okno postępu
-            progress_window.destroy()
+            self.after(0, progress_window.destroy)
 
-            # Pokaż wyniki
-            self.show_results(schedule, progress_history)
+            # Pokaż wyniki w głównym wątku
+            self.after(0, lambda: self.show_results(schedule, progress_history))
 
         except Exception as e:
             logger.error(f"Error during generation: {e}", exc_info=True)
-            messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {str(e)}")
-            progress_window.destroy()
+            self.after(0, progress_window.destroy)
+            self.after(0, lambda: messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {str(e)}"))
 
     def show_results(self, schedule: Schedule, progress_history: List[Dict]):
         """Pokazuje okno z wynikami"""

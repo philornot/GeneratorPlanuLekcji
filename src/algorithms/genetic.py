@@ -408,7 +408,7 @@ class ScheduleGenerator:
 
     def convert_to_schedule(self, individual: List) -> Schedule:
         """Konwertuje indywiduum na obiekt Schedule"""
-        schedule = Schedule()
+        schedule = Schedule(school=self.school)  # Przekazujemy school podczas tworzenia
 
         for day, hour, class_name, subject_name, teacher_id, classroom_id in individual:
             try:

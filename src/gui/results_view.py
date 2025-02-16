@@ -1,11 +1,15 @@
 # src/gui/results_view.py
+
 import logging
+from tkinter import filedialog
 from typing import Dict, List
 
 import customtkinter as ctk
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+from src.models.schedule import Schedule
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,9 @@ class ScheduleResultsWindow(ctk.CTkToplevel):
 
         self.title("Wyniki generowania planu")
         self.geometry("1200x800")
+
+        # Zmiana z _school na school
+        self.school = schedule.school
 
         # Główny kontener z zakładkami
         self.tabview = ctk.CTkTabview(self)
@@ -155,67 +162,64 @@ class ScheduleResultsWindow(ctk.CTkToplevel):
                     text = f"{lesson.subject.name}\n{lesson.teacher.name}\nSala {lesson.classroom.name}"
                     cell.configure(text=text)
 
+    # src/gui/results_view.py
     def setup_progress_chart(self, progress_history: List[Dict]):
         """Tworzy wykres postępu"""
         progress_tab = self.tabview.add("Postęp")
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+        # Utworzenie ramki dla wykresu
+        chart_frame = ctk.CTkFrame(progress_tab)
+        chart_frame.pack(fill='both', expand=True)
 
-        generations = [p['generation'] for p in progress_history]
-        best_scores = [p['best_fitness'] for p in progress_history]
-        avg_scores = [p['avg_fitness'] for p in progress_history]
+        def create_figure():
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
 
-        # Wykres najlepszego i średniego wyniku
-        ax1.plot(generations, best_scores, label='Najlepszy wynik', color='green')
-        ax1.plot(generations, avg_scores, label='Średni wynik', color='blue')
-        ax1.set_title('Postęp optymalizacji')
-        ax1.set_xlabel('Generacja')
-        ax1.set_ylabel('Ocena')
-        ax1.legend()
-        ax1.grid(True)
+            generations = [p['generation'] for p in progress_history]
+            best_scores = [p['best_fitness'] for p in progress_history]
+            avg_scores = [p['avg_fitness'] for p in progress_history]
 
-        # Wykres poprawy (różnica między kolejnymi najlepszymi wynikami)
-        improvements = np.diff(best_scores)
-        ax2.bar(generations[1:], improvements, color='orange')
-        ax2.set_title('Wielkość poprawy między generacjami')
-        ax2.set_xlabel('Generacja')
-        ax2.set_ylabel('Poprawa')
-        ax2.grid(True)
+            # Wykres najlepszego i średniego wyniku
+            ax1.plot(generations, best_scores, label='Najlepszy wynik', color='green')
+            ax1.plot(generations, avg_scores, label='Średni wynik', color='blue')
+            ax1.set_title('Postęp optymalizacji')
+            ax1.set_xlabel('Generacja')
+            ax1.set_ylabel('Ocena')
+            ax1.legend()
+            ax1.grid(True)
 
-        canvas = FigureCanvasTkAgg(fig, progress_tab)
+            # Wykres poprawy (różnica między kolejnymi najlepszymi wynikami)
+            improvements = np.diff(best_scores)
+            ax2.bar(generations[1:], improvements, color='orange')
+            ax2.set_title('Wielkość poprawy między generacjami')
+            ax2.set_xlabel('Generacja')
+            ax2.set_ylabel('Poprawa')
+            ax2.grid(True)
+
+            return fig
+
+        # Tworzenie wykresu w głównym wątku
+        fig = create_figure()
+
+        canvas = FigureCanvasTkAgg(fig, chart_frame)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(fill='both', expand=True)
 
-    def setup_statistics_view(self, schedule: 'Schedule'):
-        """Tworzy widok statystyk"""
-        stats_tab = self.tabview.add("Statystyki")
+        # Dodanie paska narzędzi
+        toolbar_frame = ctk.CTkFrame(chart_frame)
+        toolbar_frame.pack(fill='x')
 
-        # Statystyki nauczycieli
-        teacher_frame = ctk.CTkFrame(stats_tab)
-        teacher_frame.pack(fill='x', padx=5, pady=5)
+        def save_plot():
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".png",
+                filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+            )
+            if file_path:
+                fig.savefig(file_path, dpi=300, bbox_inches='tight')
 
-        ctk.CTkLabel(
-            teacher_frame,
-            text="Obciążenie nauczycieli",
-            font=("Helvetica", 12, "bold")
-        ).pack()
-
-        for teacher in schedule.get_all_teachers():
-            hours = schedule.get_teacher_hours(teacher)
-            text = f"{teacher.name}: {hours['weekly']} godz./tydzień"
-            ctk.CTkLabel(teacher_frame, text=text).pack()
-
-        # Statystyki sal
-        classroom_frame = ctk.CTkFrame(stats_tab)
-        classroom_frame.pack(fill='x', padx=5, pady=5)
-
-        ctk.CTkLabel(
-            classroom_frame,
-            text="Wykorzystanie sal",
-            font=("Helvetica", 12, "bold")
-        ).pack()
-
-        for classroom in schedule.get_all_classrooms():
-            usage = schedule.get_classroom_usage(classroom)
-            text = f"Sala {classroom.name}: {usage}% wykorzystania"
-            ctk.CTkLabel(classroom_frame, text=text).pack()
+        save_button = ctk.CTkButton(
+            toolbar_frame,
+            text="Zapisz wykres",
+            command=save_plot
+        )
+        save_button.pack(side='right', padx=5, pady=5)
