@@ -42,9 +42,9 @@ class FitnessEvaluator:
 
         # Wagi dla różnych komponentów (suma = 1.0)
         self.weights = {
-            'completeness': 0.4,
+            'completeness': 0.5,
             'load_balance': 0.3,
-            'teacher_optimization': 0.3
+            'teacher_optimization': 0.2
         }
 
         # Inicjalizacja wymaganych godzin dla każdej klasy
@@ -157,48 +157,40 @@ class FitnessEvaluator:
         )
 
     def _evaluate_completeness(self, schedule: Schedule) -> Tuple[float, Dict, Dict]:
-        """Ocena kompletności planu"""
-        logger.debug(f"Rozpoczynam ocenę kompletności dla planu z {len(schedule.class_groups)} klasami")
-
         penalties = {}
         rewards = {}
         base_score = 100.0
 
         for class_group in schedule.class_groups:
-            logger.debug(f"Sprawdzam klasę: {class_group}")
-            class_hours = schedule.get_class_hours(class_group)
-            logger.debug(f"Aktualny rozkład godzin: {class_hours}")
+            daily_lessons = defaultdict(list)
+            for lesson in schedule.get_class_lessons(class_group):
+                daily_lessons[lesson.day].append(lesson)
 
-            for subject in self.required_hours[class_group]:
-                required = subject.hours_per_week
-                actual = class_hours.get(subject.name, 0)
-
-                logger.debug(f"Przedmiot {subject.name}: wymagane {required}, aktualne {actual}")
-
-                if actual < required:
-                    penalty = 10 * (required - actual)
-                    penalties[f"missing_hours_{class_group}_{subject.name}"] = penalty
+            # Sprawdź każdy dzień
+            for day in range(5):
+                lessons = daily_lessons[day]
+                if not lessons:
+                    penalty = 50  # Zwiększamy karę z 20 do 50 za pusty dzień
+                    penalties[f"empty_day_{class_group}_{day}"] = penalty
                     base_score -= penalty
-                    logger.debug(f"Kara za brak godzin: -{penalty}")
-                elif actual > required:
-                    penalty = 5 * (actual - required)
-                    penalties[f"excess_hours_{class_group}_{subject.name}"] = penalty
-                    base_score -= penalty
-                    logger.debug(f"Kara za nadmiar godzin: -{penalty}")
+                    continue
 
-        # Sprawdzenie rozkładu lekcji
-        distribution_score = self._check_distribution_quality(schedule)
-        if distribution_score > 0:
-            rewards['good_distribution'] = distribution_score
-            base_score = min(100, base_score + distribution_score)
-            logger.debug(f"Nagroda za dobry rozkład: +{distribution_score}")
+                hours = sorted(lesson.hour for lesson in lessons)
+                if hours:
+                    # Drastycznie zwiększamy karę za późne rozpoczęcie
+                    if hours[0] > 0:
+                        penalty = hours[0] * 15  # Zwiększamy z 3 do 15
+                        penalties[f"late_start_{class_group}_{day}"] = penalty
+                        base_score -= penalty
 
-        final_score = max(0, base_score)
-        logger.debug(f"Końcowy wynik kompletności: {final_score}")
-        logger.debug(f"Kary: {penalties}")
-        logger.debug(f"Nagrody: {rewards}")
+                    # Drastycznie zwiększamy karę za okienka
+                    gaps = sum(hours[i + 1] - hours[i] - 1 for i in range(len(hours) - 1))
+                    if gaps > 0:
+                        penalty = gaps * 25  # Zwiększamy z 10 do 25
+                        penalties[f"gaps_{class_group}_{day}"] = penalty
+                        base_score -= penalty
 
-        return final_score, penalties, rewards
+        return max(0, base_score), penalties, rewards
 
     def _evaluate_load_balance(self, schedule: Schedule) -> Tuple[float, Dict, Dict]:
         """Ocena równomiernego obciążenia"""

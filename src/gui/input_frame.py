@@ -79,7 +79,7 @@ class SchoolInputFrame(ctk.CTkFrame):
             year_key = ['first_year', 'second_year', 'third_year', 'fourth_year'][year - 1]
             spinbox = ctk.CTkOptionMenu(
                 frame,
-                values=[str(i) for i in range(6)],
+                values=[str(i) for i in range(1, 6)],
                 command=lambda v, y=year: self.update_class_count(y - 1, int(v))
             )
             spinbox.pack(side='right', padx=5)

@@ -2,6 +2,7 @@
 import json
 import logging
 import random
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Dict
@@ -30,14 +31,14 @@ class ScheduleGenerator:
         # Parametry adaptacyjne
         self.adaptive_rates = {
             'mutation': {
-                'min_rate': 0.01,
-                'max_rate': 0.3,
-                'current': 0.1
+                'min_rate': 0.05,  # było 0.01
+                'max_rate': 0.4,  # było 0.3
+                'current': 0.2  # było 0.1
             },
             'crossover': {
-                'min_rate': 0.6,
+                'min_rate': 0.7,  # było 0.6
                 'max_rate': 0.95,
-                'current': 0.8
+                'current': 0.85  # było 0.8
             }
         }
 
@@ -59,6 +60,41 @@ class ScheduleGenerator:
 
         # Inicjalizacja DEAP
         self.setup_deap()
+
+    def _generate_filling_lesson(self, day: int, hour: int, class_group: str) -> Tuple:
+        """Generuje lekcję dla pustego slotu"""
+        max_attempts = 50
+
+        # Znajdź klasę
+        class_obj = next((c for c in self.school.class_groups if c.name == class_group), None)
+        if not class_obj:
+            logger.error(f"Nie znaleziono klasy {class_group}")
+            return None
+
+        for _ in range(max_attempts):
+            # Wybierz przedmiot, który jeszcze nie ma wszystkich godzin
+            subject = random.choice(class_obj.subjects)
+
+            # Znajdź nauczyciela i salę
+            available_teachers = [t for t in self.school.teachers.values()
+                                  if subject.name in t.subjects]
+            suitable_rooms = [r for r in self.school.classrooms.values()
+                              if r.is_suitable_for_subject(subject)]
+
+            if not available_teachers or not suitable_rooms:
+                continue
+
+            teacher = random.choice(available_teachers)
+            classroom = random.choice(suitable_rooms)
+
+            new_lesson = (day, hour, class_group, subject.name, teacher.id, classroom.id)
+
+            # Sprawdź czy nie ma konfliktów
+            if not self.check_conflicts([new_lesson]):
+                return new_lesson
+
+        logger.debug(f"Nie udało się wygenerować lekcji dla slotu {day}:{hour} klasa {class_group}")
+        return None
 
     def adaptive_mutation_rate(self, population: List) -> float:
         """Dynamicznie dostosowuje współczynnik mutacji"""
@@ -114,43 +150,73 @@ class ScheduleGenerator:
         return child1, child2
 
     def find_good_segments(self, individual: List) -> List[Tuple[int, int]]:
-        """Znajduje segmenty planu bez konfliktów"""
+        """Znajduje segmenty planu bez konfliktów i okienek"""
         segments = []
         current_start = 0
-        conflicts = 0
 
-        for i in range(len(individual)):
-            if self.check_conflicts(individual[i:i + 1]):
-                conflicts += 1
-                if conflicts == 0 and i > current_start:
-                    segments.append((current_start, i))
-                current_start = i + 1
+        # Grupuj lekcje po klasach i dniach
+        class_day_lessons = defaultdict(lambda: defaultdict(list))
+        for i, lesson in enumerate(individual):
+            class_day_lessons[lesson[2]][lesson[0]].append((i, lesson))
+
+        # Sprawdź każdą klasę
+        for class_group, days in class_day_lessons.items():
+            for day, lessons in days.items():
+                if lessons:
+                    # Sortuj lekcje według godziny
+                    sorted_lessons = sorted(lessons, key=lambda x: x[1][1])
+                    hours = [l[1][1] for l in sorted_lessons]
+
+                    # Sprawdź czy nie ma okienek
+                    if len(hours) > 1:
+                        has_gaps = any(hours[i + 1] - hours[i] > 1
+                                       for i in range(len(hours) - 1))
+                        if not has_gaps:
+                            # Dodaj dobry segment bez okienek
+                            start_idx = sorted_lessons[0][0]
+                            end_idx = sorted_lessons[-1][0]
+                            segments.append((start_idx, end_idx + 1))
 
         return segments
 
     def mutation(self, individual: List) -> List:
-        """Mutacja uwzględniająca konflikty"""
-        # Tworzymy kopię osobnika jako creator.Individual
+        """Wzmocniona mutacja skupiająca się na wypełnianiu dziur"""
         mutant = creator.Individual(individual[:])
 
-        # Znajdź problematyczne miejsca
-        conflict_indices = []
-        for i, lesson in enumerate(mutant):
-            if self.check_conflicts([lesson]):
-                conflict_indices.append(i)
+        # Znajdź dziury w planie
+        schedule = self.convert_to_schedule(mutant)
+        empty_slots = self._find_empty_slots(schedule)
 
-        # Jeśli są konflikty, skup się na ich naprawie
-        if conflict_indices:
-            for idx in conflict_indices:
-                if random.random() < 0.8:  # 80% szans na naprawę konfliktu
-                    mutant[idx] = self.generate_repair_lesson(mutant, idx)
-        else:
-            # Jeśli nie ma konfliktów, wykonaj standardową mutację
-            for i in range(len(mutant)):
-                if random.random() < self.adaptive_rates['mutation']['current']:
-                    mutant[i] = self.random_lesson_slot()
+        # Próbuj wypełnić dziury
+        if empty_slots and random.random() < 0.7:  # 70% szans na wypełnienie dziur
+            for slot in random.sample(empty_slots, min(len(empty_slots), 3)):
+                day, hour, class_group = slot
+                new_lesson = self._generate_filling_lesson(day, hour, class_group)
+                if new_lesson:
+                    # Znajdź i zamień odpowiednią lekcję w individual
+                    for i, lesson in enumerate(mutant):
+                        if lesson[0] == day and lesson[1] == hour and lesson[2] == class_group:
+                            mutant[i] = new_lesson
+                            break
+
+        # Standardowa mutacja
+        for i in range(len(mutant)):
+            if random.random() < self.adaptive_rates['mutation']['current']:
+                mutant[i] = self.random_lesson_slot()
 
         return mutant
+
+    def _find_empty_slots(self, schedule: Schedule) -> List[Tuple[int, int, str]]:
+        """Znajduje puste sloty w planie"""
+        empty_slots = []
+        for class_group in schedule.class_groups:
+            for day in range(5):
+                hours_used = {lesson.hour for lesson in schedule.lessons
+                              if lesson.class_group == class_group and lesson.day == day}
+                for hour in range(8):
+                    if hour not in hours_used:
+                        empty_slots.append((day, hour, class_group))
+        return empty_slots
 
     def generate_repair_lesson(self, individual: List, index: int) -> Tuple:
         """Generuje nową lekcję unikając konfliktów"""
@@ -178,18 +244,95 @@ class ScheduleGenerator:
         # Jeśli nie udało się naprawić, wygeneruj całkowicie nowy slot
         return self.random_lesson_slot()
 
+    # src/algorithms/genetic.py
+
     def optimize_population(self, population: List) -> List:
         """Optymalizuje populację używając technik lokalnego przeszukiwania"""
         improved_population = []
 
         for individual in population:
-            if random.random() < 0.1:  # 10% szans na optymalizację lokalną
+            # Zwiększamy szansę na optymalizację lokalną z 0.3 do 0.6
+            if random.random() < 0.6:
+                schedule = self.convert_to_schedule(individual)
+                empty_slots = self._find_empty_slots(schedule)
+
+                if empty_slots:
+                    improved = self._fill_empty_slots(individual, empty_slots)
+                    if improved:
+                        improved_population.append(improved)
+                        continue
+
                 improved = self.local_search(individual)
                 improved_population.append(improved)
             else:
                 improved_population.append(individual)
 
         return improved_population
+
+    def _fill_empty_slots(self, individual: List, empty_slots: List[Tuple[int, int, str]]) -> List:
+        """Próbuje wypełnić puste sloty w planie"""
+        improved = creator.Individual(individual[:])
+
+        # Sortujemy puste sloty według dnia i godziny
+        empty_slots.sort(key=lambda x: (x[0], x[1]))
+
+        for day, hour, class_group in empty_slots:
+            # Znajdź wszystkie lekcje tej klasy w tym dniu
+            class_lessons = [(i, lesson) for i, lesson in enumerate(improved)
+                             if lesson[2] == class_group and lesson[0] == day]
+
+            # Sprawdź czy jest okienko
+            if class_lessons:
+                # lesson jest tuplą (day, hour, class_group, subject, teacher_id, classroom_id)
+                # więc lesson[1] to bezpośrednio godzina
+                lesson_hours = [lesson[1] for i, lesson in class_lessons]  # Usuwamy [1] przy lesson[1]
+
+                if lesson_hours:
+                    min_hour = min(lesson_hours)
+                    max_hour = max(lesson_hours)
+
+                    if hour > min_hour and hour < max_hour:  # To jest okienko
+                        # Próbuj przenieść lekcję z innego dnia do tego okienka
+                        for i, lesson in enumerate(improved):
+                            if len(lesson) < 6:
+                                logger.error(f"Nieprawidłowa struktura lekcji: {lesson}")
+                                continue
+
+                            if (lesson[2] == class_group and  # ta sama klasa
+                                    lesson[0] != day and  # inny dzień
+                                    not self.check_conflicts([
+                                        (day, hour, *lesson[2:])  # tworzymy nową lekcję
+                                    ])):
+                                # Przenieś lekcję do okienka
+                                improved[i] = (day, hour, *lesson[2:])
+                                return improved
+
+        # Standardowa próba wypełnienia pustych slotów
+        for day, hour, class_group in empty_slots:
+            new_lesson = self._generate_filling_lesson(day, hour, class_group)
+            if new_lesson:
+                improved.append(new_lesson)
+
+        return improved
+
+    # Dodajmy też helper do walidacji struktury lekcji
+    def _validate_lesson(self, lesson) -> bool:
+        """Sprawdza czy lekcja ma poprawną strukturę"""
+        if not isinstance(lesson, (list, tuple)) or len(lesson) != 6:
+            logger.error(f"Nieprawidłowa struktura lekcji: {lesson}")
+            return False
+
+        day, hour, class_group, subject_name, teacher_id, classroom_id = lesson
+
+        if not all(isinstance(x, int) for x in [day, hour, teacher_id, classroom_id]):
+            logger.error(f"Nieprawidłowe typy danych w lekcji: {lesson}")
+            return False
+
+        if not isinstance(class_group, str) or not isinstance(subject_name, str):
+            logger.error(f"Nieprawidłowe typy danych w lekcji: {lesson}")
+            return False
+
+        return True
 
     def local_search(self, individual: List) -> List:
         """Wykonuje lokalne przeszukiwanie"""
@@ -218,8 +361,8 @@ class ScheduleGenerator:
         logger.info("Starting schedule generation")
 
         # Parametry
-        pop_size = self.params.get('population_size', 300)
-        n_generations = self.params.get('iterations', 1000)
+        pop_size = self.params.get('population_size', 1000)  # Zwiększone z 500
+        n_generations = self.params.get('iterations', 3000)  # Zwiększone z 2000
 
         # Inicjalizacja populacji z poprzednim najlepszym rozwiązaniem
         population = self.toolbox.population(n=pop_size - 1)
@@ -385,24 +528,22 @@ class ScheduleGenerator:
             classroom = random.choice(suitable_rooms)
             logger.debug(f"Przydzielono: nauczyciel {teacher.name}, sala {classroom.name}")
 
-            return (day, hour, class_group.name, subject.name, teacher.id, classroom.id)
+            return day, hour, class_group.name, subject.name, teacher.id, classroom.id
 
         raise ValueError(f"Nie udało się wygenerować poprawnego slotu po {max_attempts} próbach")
 
     def check_conflicts(self, lessons: List[Tuple]) -> bool:
         """Sprawdza czy występują konflikty między lekcjami"""
         for i, lesson1 in enumerate(lessons):
-            # Sprawdź konflikty z istniejącymi lekcjami
+            if not self._validate_lesson(lesson1):
+                return True  # Traktujemy nieprawidłową strukturę jako konflikt
+
             for lesson2 in lessons[i + 1:]:
-                if lesson1[0] == lesson2[0] and lesson1[1] == lesson2[1]:  # ten sam dzień i godzina
-                    # Ten sam nauczyciel
-                    if lesson1[4] == lesson2[4]:
-                        return True
-                    # Ta sama sala
-                    if lesson1[5] == lesson2[5]:
-                        return True
-                    # Ta sama klasa
-                    if lesson1[2] == lesson2[2]:
+                if not self._validate_lesson(lesson2):
+                    return True
+
+                if lesson1[0] == lesson2[0] and lesson1[1] == lesson2[1]:
+                    if lesson1[4] == lesson2[4] or lesson1[5] == lesson2[5] or lesson1[2] == lesson2[2]:
                         return True
         return False
 

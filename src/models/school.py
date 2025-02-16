@@ -54,32 +54,31 @@ class School:
 
     def _initialize_subjects(self):
         """Inicjalizuje wszystkie przedmioty"""
-        # Podstawowe przedmioty
+        # Podstawowe przedmioty z prawidłową liczbą godzin
         basic_subjects = [
-            Subject(id=1, name="polski", hours_per_week=4),
-            Subject(id=2, name="matematyka", hours_per_week=4),
+            Subject(id=1, name="polski", hours_per_week=4),  # było 4
+            Subject(id=2, name="matematyka", hours_per_week=3),  # było 4
             Subject(id=3, name="angielski", hours_per_week=3),
-            Subject(id=4, name="fizyka", hours_per_week=2),
-            Subject(id=5, name="chemia", hours_per_week=2),
-            Subject(id=6, name="biologia", hours_per_week=2),
-            Subject(id=7, name="geografia", hours_per_week=2),
+            Subject(id=4, name="fizyka", hours_per_week=1),  # było 2
+            Subject(id=5, name="chemia", hours_per_week=1),  # było 2
+            Subject(id=6, name="biologia", hours_per_week=1),  # było 2
+            Subject(id=7, name="geografia", hours_per_week=1),  # było 2
             Subject(id=8, name="historia", hours_per_week=2),
             Subject(id=9, name="wos", hours_per_week=1),
-            Subject(id=10, name="informatyka", hours_per_week=1,
-                    requires_special_classroom=True, special_classroom_type="sala_komputerowa"),
-            Subject(id=11, name="wf", hours_per_week=3,
-                    requires_special_classroom=True, special_classroom_type="sala_gimnastyczna")
+            Subject(id=10, name="informatyka", hours_per_week=1),
+            Subject(id=11, name="wf", hours_per_week=3)
         ]
 
         # Dodaj podstawowe przedmioty do słownika
         for subject in basic_subjects:
             self.subjects[subject.name] = subject
 
-            # Od razu stwórz wersję rozszerzoną
+            # Dla przedmiotów rozszerzonych też należy zmniejszyć liczbę godzin
+            # Obecnie jest +2 do podstawowej liczby, co daje za dużo
             extended = Subject(
                 id=subject.id + 100,
                 name=f"{subject.name}_rozszerzony",
-                hours_per_week=subject.hours_per_week + 2,  # +2 godziny dla rozszerzenia
+                hours_per_week=subject.hours_per_week + 1,  # było +2
                 requires_special_classroom=subject.requires_special_classroom,
                 special_classroom_type=subject.special_classroom_type
             )
@@ -134,6 +133,10 @@ class School:
     def initialize_classes(self, config: Dict):
         """Inicjalizuje klasy na podstawie konfiguracji"""
         logger.debug(f"Rozpoczynam inicjalizację klas z konfiguracją: {config}")
+
+        if not config.get('class_counts', {}).get('first_year', 0):
+            logger.warning("Nie wybrano żadnej klasy pierwszej, dodaję domyślnie jedną")
+            config['class_counts']['first_year'] = 1
 
         if not isinstance(config, dict):
             raise ValueError(f"Nieprawidłowa konfiguracja: {config}")
