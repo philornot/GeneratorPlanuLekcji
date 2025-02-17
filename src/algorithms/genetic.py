@@ -2,6 +2,7 @@
 import json
 import logging
 import random
+import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ import numpy as np
 from deap import creator, tools, base
 
 from src.models.lesson import Lesson
-from src.models.schedule import Schedule
+from src.models.schedule import Schedule, GenerationStats
 from src.models.school import School
 from src.utils.fitness_evaluator import FitnessEvaluator
 
@@ -356,15 +357,18 @@ class ScheduleGenerator:
 
         return best_solution
 
-    def generate(self, progress_callback=None) -> Tuple[Schedule, List[Dict]]:
+    def generate(self, progress_callback=None) -> Tuple[Schedule, List[Dict], GenerationStats]:
         """Główna funkcja generująca plan"""
         logger.info("Starting schedule generation")
 
-        # Parametry
-        pop_size = self.params.get('population_size', 1000)  # Zwiększone z 500
-        n_generations = self.params.get('iterations', 3000)  # Zwiększone z 2000
+        generation_times = []
+        start_time = time.time()
 
-        # Inicjalizacja populacji z poprzednim najlepszym rozwiązaniem
+        # Parametry
+        pop_size = self.params.get('population_size', 1000)
+        n_generations = self.params.get('iterations', 3000)
+
+        # Inicjalizacja populacji
         population = self.toolbox.population(n=pop_size - 1)
         if self.best_known_solution:
             population.append(creator.Individual(self.best_known_solution))
@@ -376,16 +380,12 @@ class ScheduleGenerator:
         stats.register("min", np.min)
         stats.register("max", np.max)
 
-        halloffame = tools.HallOfFame(5)  # Zachowuj 5 najlepszych rozwiązań
+        halloffame = tools.HallOfFame(5)
         progress_history = []
-
-        # Ocena początkowej populacji
-        fitnesses = self.toolbox.map(self.toolbox.evaluate, population)
-        for ind, fit in zip(population, fitnesses):
-            ind.fitness.values = fit
 
         # Główna pętla
         for gen in range(n_generations):
+            gen_start_time = time.time()
             # Adaptacyjne dostosowanie parametrów
             mut_rate = self.adaptive_mutation_rate(population)
 
@@ -436,10 +436,13 @@ class ScheduleGenerator:
             }
             progress_history.append(progress_data)
 
+            gen_time = time.time() - gen_start_time
+            generation_times.append(gen_time)
+
             logger.info(
                 f"Gen {gen}: Best={record['max']:.2f}, "
                 f"Avg={record['avg']:.2f}, "
-                f"Std={record['std']:.2f}"
+                f"Time={gen_time:.4f}s"
             )
 
             if progress_callback:
@@ -457,7 +460,18 @@ class ScheduleGenerator:
         # Zapisz najlepsze rozwiązanie
         self.save_best_solution(best_individual, best_individual.fitness.values[0])
 
-        return best_schedule, progress_history
+        total_time = time.time() - start_time
+        stats = GenerationStats(
+            total_time=total_time,
+            avg_generation_time=np.mean(generation_times),
+            min_generation_time=min(generation_times),
+            max_generation_time=max(generation_times),
+            total_generations=len(generation_times)
+        )
+
+        logger.info(f"Generation completed:\n{stats}")
+
+        return best_schedule, progress_history, stats
 
     def setup_deap(self):
         """Konfiguracja biblioteki DEAP"""
@@ -481,11 +495,16 @@ class ScheduleGenerator:
         self.toolbox.register("select", tools.selTournament, tournsize=3)
 
     def calculate_total_lessons(self) -> int:
-        """Oblicza całkowitą liczbę lekcji do zaplanowania"""
+        """Oblicza całkowitą liczbę lekcji do zaplanowania dla wszystkich klas"""
+        logger.debug("Calculating total number of lessons needed")
         total = 0
         for class_group in self.school.class_groups:
+            class_total = 0
             for subject in class_group.subjects:
-                total += subject.hours_per_week
+                class_total += subject.hours_per_week
+            logger.debug(f"Class {class_group.name} needs {class_total} lessons per week")
+            total += class_total
+        logger.info(f"Total lessons to schedule: {total}")
         return total
 
     def random_lesson_slot(self) -> Tuple[int, int, str, str, int, int]:

@@ -12,7 +12,7 @@ import sv_ttk
 from src.algorithms.genetic import ScheduleGenerator
 from src.gui.input_frame import SchoolInputFrame
 from src.gui.results_view import ScheduleResultsWindow
-from src.models.schedule import Schedule
+from src.models.schedule import Schedule, GenerationStats
 from src.models.school import School
 
 logger = logging.getLogger(__name__)
@@ -263,13 +263,13 @@ class SchedulerGUI(ctk.CTk):
     def run_generation(self, generator: ScheduleGenerator, progress_callback, progress_window):
         """Uruchamia generowanie planu w osobnym wątku"""
         try:
-            schedule, progress_history = generator.generate(progress_callback)
+            schedule, progress_history, generation_stats = generator.generate(progress_callback)
 
             # Zamknij okno postępu
             self.after(0, progress_window.destroy)
 
-            # Pokaż wyniki w głównym wątku
-            self.after(0, lambda: self.show_results(schedule, progress_history))
+            # Pokaż wyniki w głównym wątku - przekazujemy teraz generation_stats
+            self.after(0, lambda: self.show_results(schedule, progress_history, generation_stats))
 
         except Exception as e:
             logger.error(f"Error during generation: {str(e)}", exc_info=True)
@@ -281,7 +281,7 @@ class SchedulerGUI(ctk.CTk):
 
             self.after(0, show_error)
 
-    def show_results(self, schedule: Schedule, progress_history: List[Dict]):
+    def show_results(self, schedule: Schedule, progress_history: List[Dict], generation_stats: GenerationStats):
         """Pokazuje okno z wynikami"""
-        results_window = ScheduleResultsWindow(schedule, progress_history)
+        results_window = ScheduleResultsWindow(schedule, progress_history, generation_stats)
         results_window.grab_set()  # Zablokuj główne okno

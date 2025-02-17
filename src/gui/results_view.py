@@ -9,13 +9,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from src.models.schedule import Schedule
+from src.models.schedule import Schedule, GenerationStats
 
 logger = logging.getLogger(__name__)
 
 
 class ScheduleResultsWindow(ctk.CTkToplevel):
-    def __init__(self, schedule: 'Schedule', progress_history: List[Dict]):
+    def __init__(self, schedule: 'Schedule', progress_history: List[Dict], generation_stats: GenerationStats = None):
         super().__init__()
 
         self.title("Wyniki generowania planu")
@@ -31,7 +31,7 @@ class ScheduleResultsWindow(ctk.CTkToplevel):
         # Zakładki
         self.setup_schedule_view(schedule)
         self.setup_progress_chart(progress_history)
-        self.setup_statistics_view(schedule)
+        self.setup_statistics_view(schedule, generation_stats)  # Przekazujemy generation_stats
 
     def setup_schedule_view(self, schedule: 'Schedule'):
         """Tworzy widok planu lekcji"""
@@ -102,13 +102,25 @@ class ScheduleResultsWindow(ctk.CTkToplevel):
         for i in range(len(hours) + 1):
             grid_frame.grid_rowconfigure(i, weight=1)
 
-    def setup_statistics_view(self, schedule: 'Schedule'):
+    def setup_statistics_view(self, schedule: 'Schedule', generation_stats: GenerationStats = None):
         """Tworzy widok statystyk"""
         stats_tab = self.tabview.add("Statystyki")
 
         # Główny kontener na statystyki
         main_frame = ctk.CTkFrame(stats_tab)
         main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # Statystyki generowania
+        if generation_stats:
+            gen_frame = self._create_stats_section(main_frame, "Statystyki generowania")
+            ctk.CTkLabel(gen_frame, text=f"Całkowity czas: {generation_stats.total_time:.2f}s").pack(anchor='w')
+            ctk.CTkLabel(gen_frame, text=f"Średni czas generacji: {generation_stats.avg_generation_time:.4f}s").pack(
+                anchor='w')
+            ctk.CTkLabel(gen_frame, text=f"Min czas generacji: {generation_stats.min_generation_time:.4f}s").pack(
+                anchor='w')
+            ctk.CTkLabel(gen_frame, text=f"Max czas generacji: {generation_stats.max_generation_time:.4f}s").pack(
+                anchor='w')
+            ctk.CTkLabel(gen_frame, text=f"Liczba generacji: {generation_stats.total_generations}").pack(anchor='w')
 
         # Podstawowe informacje
         basic_frame = self._create_stats_section(main_frame, "Podstawowe informacje")
