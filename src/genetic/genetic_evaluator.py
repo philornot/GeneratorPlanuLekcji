@@ -2,8 +2,10 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Union, List, Tuple
 
+from src.models.schedule import Schedule
+from src.models.school import School
 from src.utils.logger import GPLLogger
 
 
@@ -37,27 +39,46 @@ class GeneticEvaluator:
             'constraints': 0.15  # Spełnienie ograniczeń
         }
 
-    def evaluate_schedule(self, schedule: 'Schedule') -> float:
+    def evaluate_schedule(self, schedule: Union[List, 'Schedule']) -> Tuple[float]:
         """
         Główna funkcja oceniająca plan lekcji.
 
+        Args:
+            schedule: Lista reprezentująca osobnika lub obiekt Schedule
+
         Returns:
-            float: Ocena w zakresie 0-100
+            Tuple[float]: Pojedyncza wartość fitness w krotce (wymagane przez DEAP)
         """
         try:
+            # Jeśli dostaliśmy listę (osobnika), konwertujemy na Schedule
+            if isinstance(schedule, list):
+                schedule = self.operators.convert_to_schedule(schedule)
+                if not schedule:
+                    self.logger.error("Failed to convert individual to Schedule")
+                    return (0.0,)
+
+            # Sprawdzenie czy mamy poprawny obiekt Schedule
+            if not isinstance(schedule, Schedule):
+                self.logger.error(f"Invalid schedule type: {type(schedule)}")
+                return (0.0,)
+
             # Próba pobrania z cache'a
             schedule_hash = self._calculate_schedule_hash(schedule)
             if schedule_hash in self._metrics_cache:
-                return self._metrics_cache[schedule_hash].total_score
+                return (self._metrics_cache[schedule_hash].total_score,)
 
             # Obliczenie wszystkich metryk
-            metrics = {
-                'completeness': self._evaluate_completeness(schedule),
-                'distribution': self._evaluate_distribution(schedule),
-                'teacher_load': self._evaluate_teacher_load(schedule),
-                'room_usage': self._evaluate_room_usage(schedule),
-                'constraints': self._evaluate_constraints(schedule)
-            }
+            try:
+                metrics = {
+                    'completeness': self._evaluate_completeness(schedule),
+                    'distribution': self._evaluate_distribution(schedule),
+                    'teacher_load': self._evaluate_teacher_load(schedule),
+                    'room_usage': self._evaluate_room_usage(schedule),
+                    'constraints': self._evaluate_constraints(schedule)
+                }
+            except Exception as e:
+                self.logger.error(f"Error calculating metrics: {str(e)}")
+                return (0.0,)
 
             # Obliczenie kar i nagród
             penalties = self._calculate_penalties(schedule, metrics)
@@ -70,8 +91,7 @@ class GeneticEvaluator:
             )
 
             # Aplikacja kar i nagród
-            total_score = max(0, min(100, total_score - sum(penalties.values())))
-            total_score = max(0, min(100, total_score + sum(rewards.values())))
+            total_score = max(0, min(100, total_score - sum(penalties.values()) + sum(rewards.values())))
 
             # Zapisanie do cache'a
             result = EvaluationResult(total_score, metrics, penalties, rewards)
@@ -82,11 +102,12 @@ class GeneticEvaluator:
                 cache_key=f"eval_{schedule_hash}"
             )
 
-            return total_score
+            # Zwróć wynik jako krotkę (wymagane przez DEAP)
+            return (total_score,)
 
         except Exception as e:
             self.logger.error(f"Error during schedule evaluation: {str(e)}")
-            return 0.0
+            return (0.0,)
 
     def _evaluate_completeness(self, schedule: 'Schedule') -> float:
         """Ocenia kompletność planu lekcji"""

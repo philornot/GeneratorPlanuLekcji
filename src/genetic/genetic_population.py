@@ -72,19 +72,50 @@ class PopulationManager:
         try:
             self.logger.info(f"Initializing population of size {pop_size}")
 
+            if pop_size < 1:
+                raise ValueError(f"Invalid population size: {pop_size}")
+
             # Generuj populację
-            population = toolbox.population(n=pop_size - 1 if best_known else pop_size)
+            try:
+                population = toolbox.population(n=pop_size - 1 if best_known else pop_size)
+            except Exception as e:
+                self.logger.error(f"Error generating initial population: {str(e)}")
+                raise
 
             # Dodaj najlepsze znane rozwiązanie, jeśli istnieje
             if best_known:
-                self.logger.info("Adding best known solution to initial population")
-                population.append(creator.Individual(best_known))
+                try:
+                    self.logger.info("Adding best known solution to initial population")
+                    best_individual = creator.Individual(best_known)
+                    if not isinstance(best_individual, list):
+                        raise TypeError(f"Invalid best known solution type: {type(best_individual)}")
+                    population.append(best_individual)
+                except Exception as e:
+                    self.logger.error(f"Error adding best known solution: {str(e)}")
+                    # Kontynuuj bez najlepszego rozwiązania
+                    population = toolbox.population(n=pop_size)
 
             # Oceń początkową populację
             invalid_ind = [ind for ind in population if not ind.fitness.valid]
-            fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
-            for ind, fit in zip(invalid_ind, fitnesses):
-                ind.fitness.values = fit
+
+            try:
+                fitnesses = list(map(toolbox.evaluate, invalid_ind))
+
+                # Sprawdź czy wyniki są poprawne (krotki)
+                for i, fit in enumerate(fitnesses):
+                    if not isinstance(fit, tuple):
+                        self.logger.error(f"Invalid fitness type at index {i}: {type(fit)}")
+                        fitnesses[i] = (0.0,)
+
+                # Przypisz wartości fitness
+                for ind, fit in zip(invalid_ind, fitnesses):
+                    ind.fitness.values = fit
+
+            except Exception as e:
+                self.logger.error(f"Error evaluating initial population: {str(e)}")
+                # Przypisz zerowe wartości fitness
+                for ind in invalid_ind:
+                    ind.fitness.values = (0.0,)
 
             self.logger.info("Initial population evaluated")
             return population
