@@ -51,7 +51,6 @@ class Schedule:
             'weekly': weekly_total
         }
 
-    # src/models/schedule.py
     def add_lesson(self, lesson: Lesson) -> bool:
         """Dodaje lekcję do planu, jeśli nie powoduje konfliktów"""
         if not isinstance(lesson, Lesson):
