@@ -5,8 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from deap import base, tools, creator
+from deap import base, tools
 
+from src.genetic.creator import create_base_types, get_individual_class
 from src.genetic.genetic_evaluator import GeneticEvaluator
 from src.genetic.genetic_operators import GeneticOperators
 from src.genetic.genetic_population import PopulationManager
@@ -40,8 +41,8 @@ class ScheduleGenerator:
         try:
             self.logger.debug("Initializing DEAP toolbox")
 
-            creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-            creator.create("Individual", list, fitness=creator.FitnessMax)
+            # Inicjalizacja typów bazowych
+            create_base_types()
 
             self.toolbox = base.Toolbox()
 
@@ -53,7 +54,7 @@ class ScheduleGenerator:
             self.toolbox.register(
                 "individual",
                 tools.initRepeat,
-                creator.Individual,
+                get_individual_class(),
                 self.toolbox.lesson_slot,
                 n=self._calculate_total_lessons()
             )

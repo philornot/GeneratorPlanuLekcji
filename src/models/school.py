@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 
 from src.models.classroom import Classroom
+from src.models.lesson import Lesson
 from src.models.subject import Subject
 from src.models.teacher import Teacher
 from src.utils.logger import GPLLogger
@@ -198,6 +199,22 @@ class School:
         if subject is None:
             logger.warning(f"Nie znaleziono przedmiotu: {name}")
         return subject
+
+    def get_teacher_lessons(self, teacher: Teacher) -> List[Lesson]:
+        """Zwraca wszystkie lekcje danego nauczyciela"""
+        teacher_lessons = []
+        for lesson in self.lessons:
+            if lesson.teacher.id == teacher.id:
+                teacher_lessons.append(lesson)
+        return teacher_lessons
+
+    def get_classroom_lessons(self, classroom: Classroom) -> List[Lesson]:
+        """Zwraca wszystkie lekcje w danej sali"""
+        room_lessons = []
+        for lesson in self.lessons:
+            if lesson.classroom.id == classroom.id:
+                room_lessons.append(lesson)
+        return room_lessons
 
     def get_teacher(self, id: int) -> Teacher:
         """Zwraca nauczyciela o danym id"""

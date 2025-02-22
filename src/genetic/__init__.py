@@ -14,6 +14,11 @@ Przykład użycia:
     generator = ScheduleGenerator(school, params)
     schedule, history, stats = generator.generate()
 """
+
+# Wersja modułu
+__version__ = '0.2.0'
+
+# Importy które będą dostępne na zewnątrz
 from src.genetic.genetic_evaluator import GeneticEvaluator
 from src.genetic.genetic_generator import ScheduleGenerator
 from src.genetic.genetic_operators import GeneticOperators
@@ -21,12 +26,9 @@ from src.genetic.genetic_population import PopulationManager
 from src.genetic.genetic_utils import GenerationStats
 
 __all__ = [
+    'GenerationStats',
     'ScheduleGenerator',
     'GeneticOperators',
     'GeneticEvaluator',
-    'PopulationManager',
-    'GenerationStats'
+    'PopulationManager'
 ]
-
-# Wersja modułu
-__version__ = '0.2.0'

@@ -4,12 +4,30 @@ import random
 from collections import defaultdict
 from typing import List, Tuple, Optional
 
-from deap import creator
-
+from src.genetic import creator
+from src.genetic.creator import get_individual_class
+from src.models.classroom import Classroom
 from src.models.lesson import Lesson
 from src.models.schedule import Schedule
 from src.models.school import School
+from src.models.teacher import Teacher
 from src.utils.logger import GPLLogger
+
+
+def _replace_or_add_lesson(individual: List, slot: Tuple, new_lesson: Tuple):
+    """Zastępuje lub dodaje nową lekcję w odpowiednim miejscu."""
+    day, hour, class_group = slot
+
+    # Najpierw próbujemy znaleźć i zastąpić istniejącą lekcję
+    for i, lesson in enumerate(individual):
+        if (lesson[0] == day and
+                lesson[1] == hour and
+                lesson[2] == class_group):
+            individual[i] = new_lesson
+            return
+
+    # Jeśli nie znaleziono istniejącej lekcji, dodajemy nową
+    individual.append(new_lesson)
 
 
 class GeneticOperators:
@@ -95,8 +113,9 @@ class GeneticOperators:
             good_segments1 = self._find_good_segments(ind1)
             good_segments2 = self._find_good_segments(ind2)
 
-            child1 = creator.Individual(ind1.copy())
-            child2 = creator.Individual(ind2.copy())
+            individual = get_individual_class()
+            child1 = individual(ind1.copy())
+            child2 = individual(ind2.copy())
 
             # Wymiana segmentów
             for (start1, end1), (start2, end2) in zip(good_segments1, good_segments2):
@@ -133,7 +152,7 @@ class GeneticOperators:
                 for slot in random.sample(empty_slots, min(len(empty_slots), 3)):
                     new_lesson = self._generate_filling_lesson(*slot)
                     if new_lesson:
-                        self._replace_or_add_lesson(mutant, slot, new_lesson)
+                        _replace_or_add_lesson(mutant, slot, new_lesson)
 
             # Standardowa mutacja
             mutation_points = self._select_mutation_points(mutant)
@@ -182,8 +201,9 @@ class GeneticOperators:
 
         return list(set(problem_points))  # usuń duplikaty
 
-    def _check_conflict(self, lesson1: Tuple, lesson2: Tuple) -> bool:
-        """Sprawdza czy między lekcjami występuje konflikt."""
+    @staticmethod
+    def _check_conflict(lesson1: Tuple, lesson2: Tuple) -> bool:
+        """Sprawdza, czy między lekcjami występuje konflikt."""
         if lesson1[0] != lesson2[0] or lesson1[1] != lesson2[1]:
             return False
 
@@ -191,7 +211,8 @@ class GeneticOperators:
                 lesson1[5] == lesson2[5] or  # ta sama sala
                 lesson1[2] == lesson2[2])  # ta sama klasa
 
-    def _find_lessons_near_gaps(self, individual: List, empty_slots: List[Tuple]) -> List[int]:
+    @staticmethod
+    def _find_lessons_near_gaps(individual: List, empty_slots: List[Tuple]) -> List[int]:
         """Znajduje lekcje sąsiadujące z dziurami w planie."""
         nearby_lessons = []
 
@@ -203,21 +224,6 @@ class GeneticOperators:
                     nearby_lessons.append(i)
 
         return nearby_lessons
-
-    def _replace_or_add_lesson(self, individual: List, slot: Tuple, new_lesson: Tuple):
-        """Zastępuje lub dodaje nową lekcję w odpowiednim miejscu."""
-        day, hour, class_group = slot
-
-        # Najpierw próbujemy znaleźć i zastąpić istniejącą lekcję
-        for i, lesson in enumerate(individual):
-            if (lesson[0] == day and
-                    lesson[1] == hour and
-                    lesson[2] == class_group):
-                individual[i] = new_lesson
-                return
-
-        # Jeśli nie znaleziono istniejącej lekcji, dodajemy nową
-        individual.append(new_lesson)
 
     def convert_to_schedule(self, individual: List) -> Schedule:
         """
@@ -311,10 +317,10 @@ class GeneticOperators:
 
                         # Sprawdź ciągłość godzin i brak konfliktów
                         valid_segment = True
-                        hours = [l[1][1] for l in sorted_lessons]
+                        lesson_hours = [lesson_data[1][1] for lesson_data in sorted_lessons]
 
-                        for i in range(len(hours) - 1):
-                            if hours[i + 1] - hours[i] > 1:
+                        for i in range(len(lesson_hours) - 1):
+                            if lesson_hours[i + 1] - lesson_hours[i] > 1:
                                 valid_segment = False
                                 break
 
@@ -339,7 +345,7 @@ class GeneticOperators:
         Generuje lekcję dla pustego slotu z uwzględnieniem ograniczeń.
 
         Returns:
-            Tuple reprezentujący lekcję lub None jeśli nie udało się wygenerować
+            Tuple reprezentujący lekcję lub None, jeśli nie udało się wygenerować
         """
         max_attempts = 50
 
@@ -391,7 +397,7 @@ class GeneticOperators:
 
     def _teacher_available(self, teacher: 'Teacher', day: int, hour: int) -> bool:
         """
-        Sprawdza czy nauczyciel jest dostępny w danym terminie.
+        Sprawdza, czy nauczyciel jest dostępny w danym terminie.
 
         Args:
             teacher: Obiekt nauczyciela
@@ -399,7 +405,7 @@ class GeneticOperators:
             hour: Godzina lekcyjna (0-7)
 
         Returns:
-            bool: True jeśli nauczyciel jest dostępny
+            bool: True, jeśli nauczyciel jest dostępny
         """
         teacher_hours = self.school.get_teacher_hours(teacher)
         daily_hours = teacher_hours['daily'].get(day, 0)
@@ -407,7 +413,7 @@ class GeneticOperators:
         if daily_hours >= teacher.max_hours_per_day:
             return False
 
-        # Sprawdź czy nauczyciel nie ma już lekcji w tym czasie
+        # Sprawdź, czy nauczyciel nie ma już lekcji w tym czasie
         for lesson in self.school.get_teacher_lessons(teacher):
             if lesson.day == day and lesson.hour == hour:
                 return False
@@ -416,7 +422,7 @@ class GeneticOperators:
 
     def _room_available(self, room: 'Classroom', day: int, hour: int) -> bool:
         """
-        Sprawdza czy sala jest dostępna w danym terminie.
+        Sprawdza, czy sala jest dostępna w danym terminie.
 
         Args:
             room: Obiekt sali
@@ -424,7 +430,7 @@ class GeneticOperators:
             hour: Godzina lekcyjna (0-7)
 
         Returns:
-            bool: True jeśli sala jest dostępna
+            bool: True, jeśli sala jest dostępna
         """
         for lesson in self.school.get_classroom_lessons(room):
             if lesson.day == day and lesson.hour == hour:
@@ -433,13 +439,13 @@ class GeneticOperators:
 
     def _check_conflicts(self, lessons: List[Tuple]) -> bool:
         """
-        Sprawdza czy występują konflikty między lekcjami.
+        Sprawdza, czy występują konflikty między lekcjami.
 
         Args:
             lessons: Lista lekcji do sprawdzenia
 
         Returns:
-            bool: True jeśli występują konflikty
+            bool: True, jeśli występują konflikty
         """
         for i, lesson1 in enumerate(lessons):
             if not self._validate_lesson_tuple(lesson1):
@@ -450,7 +456,7 @@ class GeneticOperators:
                     return True
 
                 if lesson1[0] == lesson2[0] and lesson1[1] == lesson2[1]:
-                    # Ten sam czas - sprawdź kolizje
+                    # Ten sam czas — sprawdź kolizje
                     if (lesson1[4] == lesson2[4] or  # ten sam nauczyciel
                             lesson1[5] == lesson2[5] or  # ta sama sala
                             lesson1[2] == lesson2[2]):  # ta sama klasa
@@ -465,7 +471,7 @@ class GeneticOperators:
             lesson: Krotka (dzień, godzina, klasa, przedmiot, id_nauczyciela, id_sali)
 
         Returns:
-            bool: True jeśli struktura jest poprawna
+            bool: True, jeśli struktura jest poprawna
         """
         try:
             if len(lesson) != 6:
@@ -487,7 +493,7 @@ class GeneticOperators:
             if not isinstance(classroom_id, int):
                 return False
 
-            # Sprawdź czy referencje istnieją
+            # Sprawdź, czy referencje istnieją
             if not self.school.teachers.get(teacher_id):
                 return False
             if not self.school.classrooms.get(classroom_id):

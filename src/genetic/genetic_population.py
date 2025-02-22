@@ -9,12 +9,8 @@ import numpy as np
 from deap import creator, base
 from deap import tools
 
-from src.genetic import GenerationStats
 from src.genetic.genetic_operators import GeneticOperators
-from src.genetic.genetic_utils import (
-    EvolutionResult,
-    calculate_population_diversity
-)
+from src.genetic.genetic_utils import GenerationStats, EvolutionResult, calculate_population_diversity
 from src.models.school import School
 from src.utils.logger import GPLLogger
 
