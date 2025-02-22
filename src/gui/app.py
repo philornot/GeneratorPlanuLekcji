@@ -1,6 +1,5 @@
 # src/gui/app.py
 import json
-import logging
 import threading
 from pathlib import Path
 from tkinter import messagebox
@@ -14,8 +13,9 @@ from src.gui.input_frame import SchoolInputFrame
 from src.gui.results_view import ScheduleResultsWindow
 from src.models.schedule import Schedule, GenerationStats
 from src.models.school import School
+from src.utils.logger import GPLLogger
 
-logger = logging.getLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 class ProgressWindow(ctk.CTkToplevel):

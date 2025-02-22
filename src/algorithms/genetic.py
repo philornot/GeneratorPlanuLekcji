@@ -1,6 +1,5 @@
 # src/algorithms/genetic.py
 import json
-import logging
 import random
 import time
 from collections import defaultdict
@@ -15,8 +14,9 @@ from src.models.lesson import Lesson
 from src.models.schedule import Schedule, GenerationStats
 from src.models.school import School
 from src.utils.fitness_evaluator import FitnessEvaluator
+from src.utils.logger import GPLLogger
 
-logger = logging.getLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 class ScheduleGenerator:

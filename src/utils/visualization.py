@@ -1,17 +1,18 @@
 # src/utils/visualization.py
 
-import logging
-from typing import Dict
 from colorama import init, Fore, Style
 
-logger = logging.getLogger(__name__)
+from src.utils.logger import GPLLogger
+
+logger = GPLLogger(__name__)
 init()  # inicjalizacja colorama
+
 
 def display_fitness_result(result: 'FitnessResult'):
     """Wyświetla wyniki oceny w czytelnej formie"""
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print(f"{Fore.CYAN}OCENA PLANU LEKCJI{Style.RESET_ALL}")
-    print("="*50)
+    print("=" * 50)
 
     # Wynik całkowity
     print(f"\n{Fore.GREEN}Wynik całkowity: {result.total_score:.2f}/100{Style.RESET_ALL}")
@@ -34,4 +35,4 @@ def display_fitness_result(result: 'FitnessResult'):
         for reward, value in result.rewards.items():
             print(f"  • {reward}: +{value:.2f}")
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)

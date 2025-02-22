@@ -1,11 +1,11 @@
 # src/main.py
 
-from utils.logger import setup_logger
 from gui.app import SchedulerGUI
+from src.utils.logger import GPLLogger
 
 
 def main():
-    logger = setup_logger('school_scheduler')
+    logger = GPLLogger(__name__)
     logger.info("Starting school scheduler application")
 
     try:

@@ -1,6 +1,5 @@
 # src/models/school.py
 
-import logging
 import string
 from dataclasses import dataclass
 from typing import List, Dict
@@ -8,8 +7,9 @@ from typing import List, Dict
 from src.models.classroom import Classroom
 from src.models.subject import Subject
 from src.models.teacher import Teacher
+from src.utils.logger import GPLLogger
 
-logger = logging.getLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 @dataclass

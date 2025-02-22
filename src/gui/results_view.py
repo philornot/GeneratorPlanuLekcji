@@ -1,6 +1,5 @@
 # src/gui/results_view.py
 
-import logging
 from tkinter import filedialog
 from typing import Dict, List
 
@@ -10,8 +9,9 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from src.models.schedule import Schedule, GenerationStats
+from src.utils.logger import GPLLogger
 
-logger = logging.getLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 class ScheduleResultsWindow(ctk.CTkToplevel):

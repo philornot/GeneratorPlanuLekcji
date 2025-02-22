@@ -1,7 +1,6 @@
 # src/utils/fitness_evaluator.py
 
 import json
-import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,8 +9,9 @@ from typing import Dict, List, Tuple
 
 from src.models.schedule import Schedule
 from src.models.subject import Subject
+from src.utils.logger import GPLLogger
 
-logger = logging.getLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 @dataclass

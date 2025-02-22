@@ -1,10 +1,11 @@
 # src/models/teacher.py
 
-import logging
 from dataclasses import dataclass
 from typing import List
 
-logger = logging.getLogger(__name__)
+from src.utils.logger import GPLLogger
+
+logger = GPLLogger(__name__)
 
 
 @dataclass

@@ -1,5 +1,4 @@
 # src/models/schedule.py
-import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import List, Dict, Set
@@ -7,8 +6,9 @@ from typing import List, Dict, Set
 from src.models.classroom import Classroom
 from src.models.lesson import Lesson
 from src.models.teacher import Teacher
+from src.utils.logger import GPLLogger
 
-logger = logging.getLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 @dataclass

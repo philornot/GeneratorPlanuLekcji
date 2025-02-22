@@ -1,12 +1,13 @@
 # src/gui/input_frame.py
 import json
-import logging
 from pathlib import Path
 from typing import Dict
 
 import customtkinter as ctk
 
-logger = logging.getLogger(__name__)
+from src.utils.logger import GPLLogger
+
+logger = GPLLogger(__name__)
 
 
 class SchoolInputFrame(ctk.CTkFrame):
