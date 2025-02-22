@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from src.models.schedule import Schedule, GenerationStats
+from src.genetic import GenerationStats
+from src.models.schedule import Schedule
 from src.utils.logger import GPLLogger
 
 logger = GPLLogger(__name__)

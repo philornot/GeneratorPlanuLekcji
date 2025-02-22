@@ -8,10 +8,10 @@ from typing import List, Dict
 import customtkinter as ctk
 import sv_ttk
 
-from src.genetic import ScheduleGenerator
+from src.genetic import ScheduleGenerator, GenerationStats
 from src.gui.input_frame import SchoolInputFrame
 from src.gui.results_view import ScheduleResultsWindow
-from src.models.schedule import Schedule, GenerationStats
+from src.models.schedule import Schedule
 from src.models.school import School
 from src.utils.logger import GPLLogger
 
@@ -235,10 +235,18 @@ class SchedulerGUI(ctk.CTk):
     def run_scheduler(self):
         """Uruchamia generowanie planu"""
         school_config = self.school_frame.get_configuration()
+        if not school_config['class_counts']['first_year']:
+            messagebox.showerror("Błąd", "Musisz zdefiniować co najmniej jedną klasę pierwszą")
+            return
+
         params = self.get_current_values()
 
         # Utwórz szkołę
-        school = School(school_config)
+        try:
+            school = School(school_config)
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie udało się utworzyć szkoły: {str(e)}")
+            return
 
         # Utwórz generator
         generator = ScheduleGenerator(school, params)

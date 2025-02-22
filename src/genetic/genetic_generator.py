@@ -136,15 +136,10 @@ class ScheduleGenerator:
         self.logger.info("Starting schedule generation")
 
         try:
-            # Walidacja parametrów
-            validation_result = self.validator.validate_school_config(self.params)
-            if not validation_result.is_valid:
-                for error in validation_result.errors:
-                    self.logger.error(f"Configuration error: {error}")
-                raise ValueError("Invalid configuration")
-
-            for warning in validation_result.warnings:
-                self.logger.warning(f"Configuration warning: {warning}")
+            # Sprawdzamy tylko, czy szkoła ma klasy
+            if not self.school.class_groups:
+                self.logger.error("No classes defined in school")
+                raise ValueError("School has no classes defined")
 
             # Generowanie początkowej populacji
             population = self.population_manager.initialize_population(
@@ -152,6 +147,8 @@ class ScheduleGenerator:
                 self.params['population_size'],
                 self.best_known_solution
             )
+
+            self.population_manager.set_params(self.params)
 
             # Główna pętla ewolucyjna
             result = self.population_manager.evolve_population(

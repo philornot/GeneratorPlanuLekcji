@@ -9,9 +9,9 @@ import numpy as np
 from deap import creator, base
 from deap import tools
 
+from src.genetic import GenerationStats
 from src.genetic.genetic_operators import GeneticOperators
 from src.genetic.genetic_utils import (
-    GenerationStats,
     EvolutionResult,
     calculate_population_diversity
 )
@@ -40,6 +40,7 @@ class PopulationManager:
     def __init__(self, school: School):
         self.school = school
         self.logger = GPLLogger(__name__)
+        self.params = {}
 
         # Statystyki
         self.stats = tools.Statistics(lambda ind: ind.fitness.values)
@@ -50,6 +51,10 @@ class PopulationManager:
 
         # Hall of Fame — przechowuje najlepsze znalezione rozwiązania
         self.hall_of_fame = tools.HallOfFame(5)
+
+    def set_params(self, params: Dict):
+        """Ustawia parametry ewolucji"""
+        self.params = params
 
     def initialize_population(
             self,

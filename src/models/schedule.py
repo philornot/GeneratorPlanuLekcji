@@ -109,19 +109,3 @@ class Schedule:
         usage = sum(1 for lesson in self.lessons if lesson.classroom == classroom)
         total_slots = 40  # 8 hours * 5 days
         return (usage / total_slots) * 100
-
-
-@dataclass
-class GenerationStats:
-    total_time: float  # całkowity czas w sekundach
-    avg_generation_time: float  # średni czas na generację
-    min_generation_time: float  # najkrótszy czas generacji
-    max_generation_time: float  # najdłuższy czas generacji
-    total_generations: int  # liczba wykonanych generacji
-
-    def __str__(self):
-        return (f"Total time: {self.total_time:.2f}s\n"
-                f"Average generation time: {self.avg_generation_time:.4f}s\n"
-                f"Min generation time: {self.min_generation_time:.4f}s\n"
-                f"Max generation time: {self.max_generation_time:.4f}s\n"
-                f"Total generations: {self.total_generations}")
