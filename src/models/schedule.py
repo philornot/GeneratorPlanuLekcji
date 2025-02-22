@@ -5,6 +5,7 @@ from typing import List, Dict, Set
 
 from src.models.classroom import Classroom
 from src.models.lesson import Lesson
+from src.models.school import School
 from src.models.teacher import Teacher
 from src.utils.logger import GPLLogger
 
@@ -71,7 +72,7 @@ class Schedule:
         return False
 
     def _check_conflicts(self, new_lesson: Lesson) -> bool:
-        """Sprawdza czy nowa lekcja nie powoduje konfliktów"""
+        """Sprawdza, czy nowa lekcja nie powoduje konfliktów"""
         return any(new_lesson.conflicts_with(lesson) for lesson in self.lessons)
 
     def to_dict(self) -> Dict:

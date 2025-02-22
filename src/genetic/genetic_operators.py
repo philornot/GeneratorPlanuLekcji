@@ -2,7 +2,7 @@
 
 import random
 from collections import defaultdict
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 
 from src.genetic import creator
 from src.genetic.creator import get_individual_class
@@ -34,6 +34,7 @@ class GeneticOperators:
     def __init__(self, school: School):
         self.school = school
         self.logger = GPLLogger(__name__)
+        self.schedule = Schedule(school=self.school)
 
         self.DAYS = 5
         self.HOURS_PER_DAY = 8
@@ -52,42 +53,51 @@ class GeneticOperators:
             }
         }
 
-    def random_lesson_slot(self) -> Tuple[int, int, str, str, int, int]:
+    def random_lesson_slot(self) -> tuple[int, int, Any, Any, Any, Any] | None:
         """
-        Generuje losowy slot lekcyjny.
-
-        Returns:
-            Tuple zawierający (dzień, godzina, klasa, przedmiot, id_nauczyciela, id_sali)
-
-        Raises:
-            ValueError: Gdy nie udało się wygenerować poprawnego slotu
+        Generuje losowy slot lekcyjny z uwzględnieniem ograniczeń.
         """
-        max_attempts = 50
+        max_attempts = 100  # Zwiększamy liczbę prób
 
         for attempt in range(max_attempts):
             try:
-                day = random.randint(0, self.DAYS - 1)
-                hour = random.randint(0, self.HOURS_PER_DAY - 1)
-
+                # Losuj klasę i przedmiot
                 class_group = random.choice(self.school.class_groups)
                 subject = random.choice(class_group.subjects)
 
+                # Znajdź dostępnych nauczycieli i sale
                 available_teachers = [
                     t for t in self.school.teachers.values()
                     if subject.name in t.subjects
                 ]
                 suitable_rooms = [
                     r for r in self.school.classrooms.values()
-                    if r.is_suitable_for_subject(subject)
+                    if self.is_room_suitable(Lesson(
+                        subject=subject,
+                        teacher=None,
+                        classroom=r,
+                        class_group=class_group.name,
+                        day=0,  # tymczasowe wartości
+                        hour=0
+                    ))
                 ]
 
                 if not available_teachers or not suitable_rooms:
                     continue
 
-                teacher = random.choice(available_teachers)
-                classroom = random.choice(suitable_rooms)
+                # Próbuj znaleźć wolny slot
+                shuffled_days = list(range(self.DAYS))
+                shuffled_hours = list(range(self.HOURS_PER_DAY))
+                random.shuffle(shuffled_days)
+                random.shuffle(shuffled_hours)
 
-                return day, hour, class_group.name, subject.name, teacher.id, classroom.id
+                for day in shuffled_days:
+                    for hour in shuffled_hours:
+                        teacher = random.choice(available_teachers)
+                        classroom = random.choice(suitable_rooms)
+
+                        if self.is_slot_available(day, hour, teacher, classroom, class_group.name):
+                            return day, hour, class_group.name, subject.name, teacher.id, classroom.id
 
             except Exception as e:
                 self.logger.warning(
@@ -95,7 +105,9 @@ class GeneticOperators:
                     cache_key=f"random_slot_attempt_{attempt}"
                 )
 
-        raise ValueError(f"Failed to generate valid lesson slot after {max_attempts} attempts")
+        self.logger.warning(f"Failed to generate valid lesson slot after {max_attempts} attempts")
+        # Zwróć None, zamiast rzucać wyjątek — pozwoli to na lepszą obsługę
+        return None
 
     def crossover(self, ind1: List, ind2: List) -> Tuple[List, List]:
         """
@@ -225,56 +237,57 @@ class GeneticOperators:
 
         return nearby_lessons
 
-    def convert_to_schedule(self, individual: List) -> Schedule:
-        """
-        Konwertuje chromosom na obiekt Schedule.
-
-        Args:
-            individual: Lista lekcji w formacie chromosomu
-
-        Returns:
-            Obiekt Schedule
-
-        Raises:
-            ValueError: Gdy nie udało się skonwertować którejś z lekcji
-        """
+    def convert_to_schedule(self, individual: List) -> Optional[Schedule]:
+        """Konwertuje chromosom na obiekt Schedule, zachowując ograniczenia."""
         schedule = Schedule(school=self.school)
+        valid_lessons = []
 
         try:
-            for day, hour, class_name, subject_name, teacher_id, classroom_id in individual:
-                teacher = self.school.teachers.get(teacher_id)
-                classroom = self.school.classrooms.get(classroom_id)
-                subject = next(
-                    s for s in self.school.subjects.values()
-                    if s.name == subject_name
-                )
+            for lesson_data in individual:
+                # Pomiń None (nieudane próby generacji)
+                if lesson_data is None:
+                    continue
 
-                if not all([teacher, classroom, subject]):
-                    raise ValueError(
-                        f"Invalid lesson components: teacher={teacher_id}, "
-                        f"classroom={classroom_id}, subject={subject_name}"
+                try:
+                    teacher = self.school.teachers.get(lesson_data[4])
+                    classroom = self.school.classrooms.get(lesson_data[5])
+                    subject = next(
+                        s for s in self.school.subjects.values()
+                        if s.name == lesson_data[3]
                     )
 
-                lesson = Lesson(
-                    subject=subject,
-                    teacher=teacher,
-                    classroom=classroom,
-                    class_group=class_name,
-                    day=day,
-                    hour=hour
-                )
+                    lesson = Lesson(
+                        subject=subject,
+                        teacher=teacher,
+                        classroom=classroom,
+                        class_group=lesson_data[2],
+                        day=lesson_data[0],
+                        hour=lesson_data[1]
+                    )
 
+                    # Sprawdź wszystkie warunki
+                    if (self.is_room_suitable(lesson) and
+                            self.is_slot_available(
+                                lesson.day, lesson.hour,
+                                teacher, classroom,
+                                lesson.class_group
+                            )):
+                        valid_lessons.append(lesson)
+
+                except Exception as e:
+                    self.logger.error(f"Error converting lesson: {str(e)}")
+                    continue
+
+            # Dodaj lekcje w odpowiedniej kolejności
+            for lesson in sorted(valid_lessons, key=lambda x: (x.day, x.hour)):
                 if not schedule.add_lesson(lesson):
-                    self.logger.warning(
-                        f"Could not add lesson to schedule: {lesson}",
-                        cache_key=f"add_lesson_failed_{day}_{hour}_{class_name}"
-                    )
+                    self.logger.warning(f"Could not add lesson to schedule: {lesson}")
 
-            return schedule
+            return schedule if schedule.lessons else None
 
         except Exception as e:
-            self.logger.error(f"Schedule conversion failed: {str(e)}")
-            raise
+            self.logger.error(f"Error converting schedule: {str(e)}")
+            return None
 
     def _find_empty_slots(self, schedule: Schedule) -> List[Tuple[int, int, str]]:
         """
@@ -335,90 +348,128 @@ class GeneticOperators:
             self.logger.warning(f"Error finding good segments: {str(e)}")
             return []
 
-    def _generate_filling_lesson(
-            self,
-            day: int,
-            hour: int,
-            class_group: str
-    ) -> Optional[Tuple]:
-        """
-        Generuje lekcję dla pustego slotu z uwzględnieniem ograniczeń.
-
-        Returns:
-            Tuple reprezentujący lekcję lub None, jeśli nie udało się wygenerować
-        """
+    def _generate_filling_lesson(self, day: int, hour: int, class_group: str) -> Optional[Tuple]:
+        """Generuje lekcję dla pustego slotu"""
         max_attempts = 50
 
         try:
-            class_obj = next(
-                c for c in self.school.class_groups
-                if c.name == class_group
-            )
+            class_obj = next(c for c in self.school.class_groups if c.name == class_group)
 
             for attempt in range(max_attempts):
                 subject = random.choice(class_obj.subjects)
 
-                available_teachers = [
-                    t for t in self.school.teachers.values()
-                    if (subject.name in t.subjects and
-                        self._teacher_available(t, day, hour))
-                ]
-
+                # Znajdź odpowiednie sale najpierw
                 suitable_rooms = [
                     r for r in self.school.classrooms.values()
-                    if (r.is_suitable_for_subject(subject) and
-                        self._room_available(r, day, hour))
+                    if self.is_room_suitable(Lesson(
+                        subject=subject,
+                        teacher=None,  # Tymczasowo None
+                        classroom=r,
+                        class_group=class_group,
+                        day=day,
+                        hour=hour
+                    ))
                 ]
 
-                if not available_teachers or not suitable_rooms:
+                if not suitable_rooms:
+                    continue
+
+                # Teraz szukaj nauczycieli
+                available_teachers = [
+                    t for t in self.school.teachers.values()
+                    if subject.name in t.subjects and self._teacher_available(t, day, hour)
+                ]
+
+                if not available_teachers:
                     continue
 
                 teacher = random.choice(available_teachers)
                 classroom = random.choice(suitable_rooms)
 
-                new_lesson = (
-                    day, hour, class_group,
-                    subject.name, teacher.id, classroom.id
-                )
-
-                if not self._check_conflicts([new_lesson]):
-                    return new_lesson
+                return day, hour, class_group, subject.name, teacher.id, classroom.id
 
             return None
 
         except Exception as e:
-            self.logger.warning(
-                f"Failed to generate filling lesson: {str(e)}",
-                cache_key=f"fill_lesson_failed_{day}_{hour}_{class_group}"
-            )
+            self.logger.warning(f"Failed to generate filling lesson: {str(e)}")
             return None
 
-    # src/algorithms/genetic/genetic_operators.py (continuation)
+    @staticmethod
+    def is_room_suitable(lesson: 'Lesson') -> bool:
+        """Sprawdza, czy sala jest odpowiednia dla przedmiotu i dostępna"""
+        room = lesson.classroom
+
+        # Sprawdź, czy przedmiot wymaga specjalnej sali
+        if lesson.subject.requires_special_classroom:
+            if room.room_type != lesson.subject.special_classroom_type:
+                return False
+
+        # Specjalne wymagania dla WF
+        if lesson.subject.name == 'wf' and room.room_type != 'sala_gimnastyczna':
+            return False
+
+        # Specjalne wymagania dla informatyki
+        if lesson.subject.name in ['informatyka', 'informatyka_rozszerzony'] and room.room_type != 'sala_komputerowa':
+            return False
+
+        return True
 
     def _teacher_available(self, teacher: 'Teacher', day: int, hour: int) -> bool:
         """
         Sprawdza, czy nauczyciel jest dostępny w danym terminie.
-
-        Args:
-            teacher: Obiekt nauczyciela
-            day: Dzień tygodnia (0-4)
-            hour: Godzina lekcyjna (0-7)
-
-        Returns:
-            bool: True, jeśli nauczyciel jest dostępny
         """
-        teacher_hours = self.school.get_teacher_hours(teacher)
-        daily_hours = teacher_hours['daily'].get(day, 0)
+        try:
+            # Sprawdź lekcje nauczyciela w tym dniu
+            teacher_lessons = [
+                lesson for lesson in self.schedule.lessons
+                if lesson.teacher.id == teacher.id
+            ]
 
-        if daily_hours >= teacher.max_hours_per_day:
-            return False
-
-        # Sprawdź, czy nauczyciel nie ma już lekcji w tym czasie
-        for lesson in self.school.get_teacher_lessons(teacher):
-            if lesson.day == day and lesson.hour == hour:
+            # Sprawdź czy nauczyciel nie ma już lekcji w tym czasie
+            if any(lesson.day == day and lesson.hour == hour for lesson in teacher_lessons):
                 return False
 
-        return True
+            # Policz godziny w danym dniu
+            daily_hours = sum(1 for lesson in teacher_lessons if lesson.day == day)
+            if daily_hours >= teacher.max_hours_per_day:
+                return False
+
+            # Sprawdź tygodniowy limit
+            weekly_hours = len(teacher_lessons)
+            if weekly_hours >= teacher.max_hours_per_week:
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error checking teacher availability: {str(e)}")
+            return False
+
+
+    def is_slot_available(self, day: int, hour: int, teacher: 'Teacher', classroom: 'Classroom',
+                          class_group: str) -> bool:
+        """
+        Sprawdza, czy dany slot czasowy jest dostępny dla wszystkich zasobów.
+        """
+        try:
+            # Sprawdź, czy sala jest dostępna w tym czasie
+            for lesson in self.schedule.lessons:
+                if lesson.day == day and lesson.hour == hour:
+                    # Ten sam nauczyciel nie może prowadzić dwóch lekcji
+                    if lesson.teacher.id == teacher.id:
+                        return False
+                    # Ta sama klasa nie może mieć dwóch lekcji
+                    if lesson.class_group == class_group:
+                        return False
+                    # Ta sama sala nie może być używana przez dwie lekcje
+                    if lesson.classroom.id == classroom.id:
+                        return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error checking slot availability: {str(e)}")
+            return False
 
     def _room_available(self, room: 'Classroom', day: int, hour: int) -> bool:
         """

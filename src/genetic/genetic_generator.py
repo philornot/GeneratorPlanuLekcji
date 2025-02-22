@@ -26,8 +26,8 @@ class ScheduleGenerator:
         self.validator = ScheduleValidator()
 
         # Komponenty algorytmu genetycznego
-        self.evaluator = GeneticEvaluator(school, params)
-        self.operators = GeneticOperators(school)
+        self.operators = GeneticOperators(school)  # Najpierw operators
+        self.evaluator = GeneticEvaluator(school, self.operators, params)  # Potem evaluator z operators
         self.population_manager = PopulationManager(school)
 
         # Inicjalizacja DEAP

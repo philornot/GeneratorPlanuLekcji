@@ -2,11 +2,14 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Union, List, Tuple
+from typing import Dict, Union, List, Tuple, TYPE_CHECKING
 
 from src.models.schedule import Schedule
 from src.models.school import School
 from src.utils.logger import GPLLogger
+
+if TYPE_CHECKING:
+    from src.genetic.genetic_operators import GeneticOperators
 
 
 @dataclass
@@ -21,9 +24,10 @@ class EvaluationResult:
 class GeneticEvaluator:
     """Klasa oceniająca jakość wygenerowanych planów lekcji"""
 
-    def __init__(self, school: 'School', params: Dict):
+    def __init__(self, school: 'School', operators: 'GeneticOperators', params: Dict):
         self.school = school
         self.params = params
+        self.operators = operators
         self.logger = GPLLogger(__name__)
 
         # Cache dla optymalizacji
