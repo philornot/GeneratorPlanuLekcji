@@ -8,7 +8,7 @@ from typing import List, Dict
 import customtkinter as ctk
 import sv_ttk
 
-from src.algorithms.genetic import ScheduleGenerator
+from src.genetic import ScheduleGenerator
 from src.gui.input_frame import SchoolInputFrame
 from src.gui.results_view import ScheduleResultsWindow
 from src.models.schedule import Schedule, GenerationStats

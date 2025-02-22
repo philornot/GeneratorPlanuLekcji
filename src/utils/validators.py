@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict
-from src.utils.logger import StructuredLogger
+from src.utils.logger import GPLLogger
 
-logger = StructuredLogger(__name__)
+logger = GPLLogger(__name__)
 
 
 @dataclass
