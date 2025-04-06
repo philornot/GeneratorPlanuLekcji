@@ -6,26 +6,33 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 import numpy as np
-from deap import creator, base
+from deap import base
 from deap import tools
 
+from src.genetic.creator import get_individual_class
 from src.genetic.genetic_operators import GeneticOperators
 from src.genetic.genetic_utils import GenerationStats, EvolutionResult, calculate_population_diversity
 from src.models.school import School
 from src.utils.logger import GPLLogger
 
 
-def _should_stop(record: Dict, generation: int) -> bool:
+def _should_stop(record: Dict, generation: int, prev_best: List[float]) -> bool:
     """Sprawdza, czy należy zatrzymać ewolucję"""
     # Zatrzymaj, jeśli osiągnięto bardzo dobry wynik
     if record['max'] >= 95:
         return True
 
     # Zatrzymaj, jeśli nie ma postępu przez wiele generacji
-    if (generation > 20 and
-            abs(record['max'] - record['avg']) < 0.1 and
-            record['std'] < 0.1):
-        return True
+    if generation > 20:
+        # Jeśli średnia zmiana w ostatnich 5 generacjach < 0.05
+        if len(prev_best) >= 5:
+            last_5 = prev_best[-5:]
+            if max(last_5) - min(last_5) < 0.05:
+                return True
+
+        # Dodatkowo sprawdź rozkład populacji
+        if abs(record['max'] - record['avg']) < 0.1 and record['std'] < 0.1:
+            return True
 
     return False
 
@@ -56,7 +63,8 @@ class PopulationManager:
             self,
             toolbox: 'base.Toolbox',
             pop_size: int,
-            best_known: Optional[List] = None
+            best_known: Optional[List] = None,
+            basic_individual: Optional[List] = None
     ) -> List:
         """
         Inicjalizuje początkową populację.
@@ -65,6 +73,7 @@ class PopulationManager:
             toolbox: Toolbox z DEAP
             pop_size: Rozmiar populacji
             best_known: Najlepsze znane rozwiązanie (opcjonalne)
+            basic_individual: Podstawowy osobnik (opcjonalne)
 
         Returns:
             Lista osobników początkowej populacji
@@ -75,25 +84,53 @@ class PopulationManager:
             if pop_size < 1:
                 raise ValueError(f"Invalid population size: {pop_size}")
 
+            # Oblicz ile osobników losowych wygenerować
+            num_random = pop_size
+            if best_known:
+                num_random -= 1
+            if basic_individual:
+                num_random -= 1
+
+            # Upewnij się, że generujemy co najmniej jednego osobnika
+            num_random = max(1, num_random)
+
             # Generuj populację
             try:
-                population = toolbox.population(n=pop_size - 1 if best_known else pop_size)
+                population = toolbox.population(n=num_random)
             except Exception as e:
                 self.logger.error(f"Error generating initial population: {str(e)}")
                 raise
 
-            # Dodaj najlepsze znane rozwiązanie, jeśli istnieje
+            # Dodaj podstawowy osobnik
+            if basic_individual:
+                try:
+                    self.logger.info("Adding basic schedule to initial population")
+                    Individual = get_individual_class()
+                    basic = Individual(basic_individual)
+                    if not isinstance(basic, list):
+                        raise TypeError(f"Invalid basic individual type: {type(basic)}")
+                    population.append(basic)
+                except Exception as e:
+                    self.logger.error(f"Error adding basic individual: {str(e)}")
+                    # Kontynuuj bez podstawowego osobnika
+
+            # Dodaj najlepsze znane rozwiązanie
             if best_known:
                 try:
                     self.logger.info("Adding best known solution to initial population")
-                    best_individual = creator.Individual(best_known)
+                    Individual = get_individual_class()
+                    best_individual = Individual(best_known)
                     if not isinstance(best_individual, list):
                         raise TypeError(f"Invalid best known solution type: {type(best_individual)}")
                     population.append(best_individual)
                 except Exception as e:
                     self.logger.error(f"Error adding best known solution: {str(e)}")
-                    # Kontynuuj bez najlepszego rozwiązania
-                    population = toolbox.population(n=pop_size)
+                    # Wygeneruj dodatkowego osobnika jeśli nie udało się dodać najlepszego
+                    try:
+                        extra_ind = toolbox.population(n=1)[0]
+                        population.append(extra_ind)
+                    except:
+                        pass
 
             # Oceń początkową populację
             invalid_ind = [ind for ind in population if not ind.fitness.valid]
@@ -146,9 +183,10 @@ class PopulationManager:
             EvolutionResult z wynikami ewolucji
         """
         try:
+            start_time = time.time()
             generation_times = []
             progress_history = []
-            start_time = time.time()
+            prev_best = []
 
             # Parametry
             n_generations = params.get('iterations', 1000)
@@ -191,7 +229,8 @@ class PopulationManager:
                 progress_history.append(progress)
 
                 # Sprawdzenie warunku zatrzymania
-                if _should_stop(record, gen):
+                prev_best.append(record['max'])
+                if _should_stop(record, gen, prev_best):
                     self.logger.info(
                         f"Stopping early at generation {gen} - achieved desired fitness"
                     )

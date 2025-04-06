@@ -1,65 +1,59 @@
 # src/genetic/creator.py
-from typing import Any, Type
-
-from deap import base, creator
-
+from deap import base, creator, tools
 from src.utils.logger import GPLLogger
 
 logger = GPLLogger(__name__)
+
+# Zmienne globalne do śledzenia stanu inicjalizacji
+_initialized = False
+_individual_class = None
 
 
 def create_base_types() -> None:
     """
     Tworzy podstawowe typy używane w algorytmie genetycznym.
-    Dodatkowo sprawdza poprawność konfiguracji.
+    Bezpieczne dla wielokrotnego wywołania.
     """
+    global _initialized, _individual_class
+
     try:
-        # Usuwamy poprzednie definicje, jeśli istnieją
+        # Sprawdź, czy już zainicjalizowano
+        if _initialized:
+            return
+
+        # Jeśli istnieją już te typy, usuń je
         if hasattr(creator, 'FitnessMax'):
-            del creator.FitnessMax
+            delattr(creator, 'FitnessMax')
         if hasattr(creator, 'Individual'):
-            del creator.Individual
+            delattr(creator, 'Individual')
 
-        # Tworzymy typ fitness maksymalizujący (wagi dodatnie)
+        # Tworzymy typy
         creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-
-        # Sprawdź, czy typ został utworzony poprawnie
-        if not hasattr(creator, 'FitnessMax'):
-            raise RuntimeError("Failed to create FitnessMax type")
-
-        # Sprawdź, czy wagi zostały ustawione poprawnie
-        if not creator.FitnessMax.weights == (1.0,):
-            raise ValueError(f"Invalid weights: {creator.FitnessMax.weights}")
-
-        # Tworzymy typ osobnika dziedziczącego po liście
         creator.create("Individual", list, fitness=creator.FitnessMax)
 
-        # Sprawdź, czy typ został utworzony poprawnie
-        if not hasattr(creator, 'Individual'):
-            raise RuntimeError("Failed to create Individual type")
+        # Zapisz referencję dla bezpieczeństwa
+        _individual_class = creator.Individual
+        _initialized = True
 
-        # Sprawdź, czy Individual dziedziczy po liście
-        if not issubclass(creator.Individual, list):
-            raise TypeError("Individual must inherit from list")
+        logger.debug("Creator base types initialized successfully")
 
     except Exception as e:
-        logger.error(f"Error creating base types: {str(e)}")
-        raise RuntimeError(f"Failed to initialize genetic algorithm types: {str(e)}")
+        logger.error(f"Failed to initialize creator base types: {str(e)}")
+        raise
 
 
-def get_fitness_class() -> Type[Any]:
-    """Zwraca klasę FitnessMax"""
-    if not hasattr(creator, 'FitnessMax'):
+def get_individual_class():
+    """Zwraca klasę Individual, inicjalizując jeśli potrzeba"""
+    global _individual_class
+
+    if not _initialized:
         create_base_types()
-    return creator.FitnessMax
+
+    if _individual_class is None:
+        _individual_class = creator.Individual
+
+    return _individual_class
 
 
-def get_individual_class() -> Type[Any]:
-    """Zwraca klasę Individual"""
-    if not hasattr(creator, 'Individual'):
-        create_base_types()
-    return creator.Individual
-
-
-# Wywołujemy create_base_types przy importowaniu modułu
+# Inicjalizacja przy importowaniu
 create_base_types()

@@ -4,7 +4,6 @@ import random
 from collections import defaultdict
 from typing import List, Tuple, Optional, Any
 
-from src.genetic import creator
 from src.genetic.creator import get_individual_class
 from src.models.classroom import Classroom
 from src.models.lesson import Lesson
@@ -153,37 +152,53 @@ class GeneticOperators:
             Zmutowany osobnik
         """
         try:
-            mutant = creator.Individual(individual[:])
+            # Użyj get_individual_class zamiast creator.Individual
+            Individual = get_individual_class()
+            mutant = Individual(individual[:])
 
             # Wypełnianie dziur
             schedule = self.convert_to_schedule(mutant)
-            empty_slots = self._find_empty_slots(schedule)
 
-            if empty_slots and random.random() < 0.7:
-                # Próbujemy wypełnić do 3 losowych dziur
-                for slot in random.sample(empty_slots, min(len(empty_slots), 3)):
-                    new_lesson = self._generate_filling_lesson(*slot)
-                    if new_lesson:
-                        _replace_or_add_lesson(mutant, slot, new_lesson)
+            # Tylko jeśli mamy poprawny harmonogram
+            if schedule:
+                empty_slots = self._find_empty_slots(schedule)
 
-            # Standardowa mutacja
+                if empty_slots and random.random() < 0.7:
+                    # Wybierz do 3 losowych dziur do wypełnienia
+                    slot_count = min(len(empty_slots), 3)
+                    for slot in random.sample(empty_slots, slot_count):
+                        new_lesson = self._generate_filling_lesson(*slot)
+                        if new_lesson:
+                            _replace_or_add_lesson(mutant, slot, new_lesson)
+
+            # Standardowa mutacja - wybierz punkty do mutacji
             mutation_points = self._select_mutation_points(mutant)
+
+            # Ogranicz liczbę punktów mutacji dla wydajności
+            if len(mutation_points) > 5:
+                mutation_points = random.sample(mutation_points, 5)
+
+            # Wykonaj mutację na wybranych punktach
             for i in mutation_points:
-                if random.random() < self.adaptive_rates['mutation']['current']:
+                if i < len(mutant) and random.random() < self.adaptive_rates['mutation']['current']:
                     try:
-                        mutant[i] = self.random_lesson_slot()
+                        # Generuj nowy slot lekcyjny
+                        new_slot = self.random_lesson_slot()
+                        if new_slot:  # Upewnij się, że slot został wygenerowany
+                            mutant[i] = new_slot
                     except ValueError as e:
-                        self.logger.warning(f"Failed to generate new lesson for mutation: {e}")
+                        # Cichsze logowanie
+                        self.logger.debug(f"Failed to generate new lesson for mutation: {e}")
 
             return mutant
 
         except Exception as e:
             self.logger.error(f"Mutation failed: {str(e)}")
-            return individual
+            return individual  # W przypadku błędu zwróć oryginalny osobnik
 
     def _select_mutation_points(self, individual: List) -> List[int]:
         """
-        Wybiera punkty do mutacji, preferując problematyczne miejsca.
+        Wybiera punkty do mutacji, preferując problematyczne miejsca i klasy z małą liczbą lekcji.
 
         Args:
             individual: Osobnik do analizy
@@ -194,22 +209,83 @@ class GeneticOperators:
         schedule = self.convert_to_schedule(individual)
         problem_points = []
 
-        # Znajdź konflikty
+        # Jeśli nie udało się utworzyć planu, wybierz losowe punkty
+        if not schedule:
+            return random.sample(
+                range(len(individual)),
+                k=min(10, max(1, len(individual) // 10))
+            )
+
+        # Licz lekcje per klasa
+        class_lesson_counts = {}
+        for class_group in self.school.class_groups:
+            count = len(schedule.get_class_lessons(class_group.name))
+            class_lesson_counts[class_group.name] = count
+
+        # Znajdź puste i niedostatecznie wypełnione klasy
+        empty_classes = [name for name, count in class_lesson_counts.items() if count == 0]
+        underfilled_classes = [name for name, count in class_lesson_counts.items()
+                               if 0 < count < 15]  # Minimum ~15 lekcji tygodniowo
+
+        # Znajdź konflikty w planie
         for i, lesson1 in enumerate(individual):
+            if lesson1 is None:
+                continue
+
+            # Dodaj punkty dla lekcji w pustych/niedowypełnionych klasach
+            if lesson1[2] in empty_classes:
+                problem_points.append(i)
+                continue
+
+            if lesson1[2] in underfilled_classes:
+                # 50% szans na dodanie punktu dla niedowypełnionych klas
+                if random.random() < 0.5:
+                    problem_points.append(i)
+                    continue
+
+            # Sprawdź konflikty
             for j, lesson2 in enumerate(individual[i + 1:], i + 1):
+                if lesson2 is None:
+                    continue
+
                 if self._check_conflict(lesson1, lesson2):
                     problem_points.extend([i, j])
 
-        # Dodaj punkty z dziurami
-        empty_slots = self._find_empty_slots(schedule)
-        if empty_slots:
-            related_lessons = self._find_lessons_near_gaps(individual, empty_slots)
-            problem_points.extend(related_lessons)
+        # Dodaj punkty dla lekcji None (nieprawidłowych)
+        for i, lesson in enumerate(individual):
+            if lesson is None:
+                problem_points.append(i)
 
-        # Jeśli nie znaleziono problemów, wybierz losowe punkty
+        # Dodaj punkty z dziurami w planie
+        if schedule:
+            empty_slots = self._find_empty_slots(schedule)
+            if empty_slots:
+                related_lessons = self._find_lessons_near_gaps(individual, empty_slots)
+                problem_points.extend(related_lessons)
+
+        # Jeśli nie znaleziono problemów lub mamy za dużo punktów, optymalizuj
         if not problem_points:
-            problem_points = random.sample(range(len(individual)),
-                                           k=max(1, len(individual) // 10))
+            problem_points = random.sample(
+                range(len(individual)),
+                k=max(1, min(5, len(individual) // 20))
+            )
+        elif len(problem_points) > 10:
+            # Za dużo punktów, wybierz najważniejsze
+            # Priorytetyzuj punkty związane z pustymi klasami
+            empty_class_points = [p for p in problem_points
+                                  if individual[p] is not None and individual[p][2] in empty_classes]
+
+            if empty_class_points:
+                # Wybierz wszystkie punkty dla pustych klas + kilka losowych
+                other_points = [p for p in problem_points if p not in empty_class_points]
+                selected_others = random.sample(
+                    other_points,
+                    k=min(5, len(other_points))
+                )
+                problem_points = empty_class_points + selected_others
+            else:
+                # Wybierz losowe punkty
+                problem_points = random.sample(problem_points, k=10)
 
         return list(set(problem_points))  # usuń duplikaty
 
@@ -240,54 +316,48 @@ class GeneticOperators:
     def convert_to_schedule(self, individual: List) -> Optional[Schedule]:
         """Konwertuje chromosom na obiekt Schedule, zachowując ograniczenia."""
         schedule = Schedule(school=self.school)
-        valid_lessons = []
 
-        try:
-            for lesson_data in individual:
-                # Pomiń None (nieudane próby generacji)
-                if lesson_data is None:
-                    continue
+        # Filtracja przed przetwarzaniem
+        valid_indices = [i for i, lesson_data in enumerate(individual) if lesson_data is not None]
 
-                try:
-                    teacher = self.school.teachers.get(lesson_data[4])
-                    classroom = self.school.classrooms.get(lesson_data[5])
-                    subject = next(
-                        s for s in self.school.subjects.values()
-                        if s.name == lesson_data[3]
-                    )
+        # Przygotowanie wszystkich lekcji przed sprawdzeniami konfliktów
+        potential_lessons = []
 
-                    lesson = Lesson(
-                        subject=subject,
-                        teacher=teacher,
-                        classroom=classroom,
-                        class_group=lesson_data[2],
-                        day=lesson_data[0],
-                        hour=lesson_data[1]
-                    )
+        for idx in valid_indices:
+            lesson_data = individual[idx]
+            try:
+                teacher = self.school.teachers.get(lesson_data[4])
+                classroom = self.school.classrooms.get(lesson_data[5])
+                subject = next(
+                    s for s in self.school.subjects.values()
+                    if s.name == lesson_data[3]
+                )
 
-                    # Sprawdź wszystkie warunki
-                    if (self.is_room_suitable(lesson) and
-                            self.is_slot_available(
-                                lesson.day, lesson.hour,
-                                teacher, classroom,
-                                lesson.class_group
-                            )):
-                        valid_lessons.append(lesson)
+                lesson = Lesson(
+                    subject=subject,
+                    teacher=teacher,
+                    classroom=classroom,
+                    class_group=lesson_data[2],
+                    day=lesson_data[0],
+                    hour=lesson_data[1]
+                )
 
-                except Exception as e:
-                    self.logger.error(f"Error converting lesson: {str(e)}")
-                    continue
+                # Dodaj tylko jeśli sala jest odpowiednia
+                if self.is_room_suitable(lesson):
+                    potential_lessons.append(lesson)
 
-            # Dodaj lekcje w odpowiedniej kolejności
-            for lesson in sorted(valid_lessons, key=lambda x: (x.day, x.hour)):
-                if not schedule.add_lesson(lesson):
-                    self.logger.warning(f"Could not add lesson to schedule: {lesson}")
+            except Exception as e:
+                # Cichsze logowanie
+                pass
 
-            return schedule if schedule.lessons else None
+        # Sortuj lekcje dla deterministycznej kolejności dodawania
+        sorted_lessons = sorted(potential_lessons, key=lambda x: (x.day, x.hour))
 
-        except Exception as e:
-            self.logger.error(f"Error converting schedule: {str(e)}")
-            return None
+        # Dodaj lekcje do planu
+        for lesson in sorted_lessons:
+            schedule.add_lesson(lesson)
+
+        return schedule if schedule.lessons else None
 
     def _find_empty_slots(self, schedule: Schedule) -> List[Tuple[int, int, str]]:
         """

@@ -15,14 +15,14 @@ from src.models.schedule import Schedule
 from src.models.school import School
 from src.utils.logger import GPLLogger
 
-logger = GPLLogger(__name__)
-
 
 class ProgressWindow(ctk.CTkToplevel):
     def __init__(self):
         super().__init__()
         self.title("Postęp generowania planu")
         self.geometry("400x150")
+
+        self.logger = GPLLogger(__name__)
 
         # Etykieta z opisem
         self.status_label = ctk.CTkLabel(self, text="Inicjalizacja...")
@@ -33,11 +33,17 @@ class ProgressWindow(ctk.CTkToplevel):
         self.progress_bar.pack(pady=10, padx=20, fill='x')
         self.progress_bar.set(0)
 
-    def update_progress(self, progress: float, status_text: str):
-        """Aktualizuje pasek postępu i tekst statusu"""
-        self.progress_bar.set(progress / 100)  # progress jest od 0 do 100
-        self.status_label.configure(text=status_text)
-        self.update()  # odśwież okno
+    def update_progress(self, progress_data):
+        try:
+            # Sprawdź, czy widget wciąż istnieje
+            if self.winfo_exists():
+                self.progress_bar.set(progress_data['progress_percent'] / 100)
+                self.status_label.configure(text=f"Generacja {progress_data['generation']}\n"
+                                                 f"Najlepszy wynik: {progress_data['best_fitness']:.2f}\n"
+                                                 f"Średni wynik: {progress_data['avg_fitness']:.2f}")
+                self.update()  # odśwież okno
+        except Exception as e:
+            print(f"Błąd aktualizacji postępu: {e}")
 
 
 class SchedulerGUI(ctk.CTk):
@@ -48,6 +54,7 @@ class SchedulerGUI(ctk.CTk):
         self.title("School Scheduler - Konfiguracja")
         self.geometry("600x400")
         sv_ttk.set_theme("light")
+        self.logger = GPLLogger(__name__)
 
         # Ścieżka do pliku z konfiguracją
         self.config_path = Path('data/config.json')
@@ -83,13 +90,18 @@ class SchedulerGUI(ctk.CTk):
             value_label.configure(text=f"{rounded_val:.3f}")
             current_values = self.get_current_values()
             self.save_config(current_values)
-            logger.debug(f"Saved new configuration: {current_values}")
+            self.logger.debug(f"Saved new configuration: {current_values}")
+
+        # Zabezpieczenie przed dzieleniem przez zero
+        num_steps = 100  # Domyślna wartość
+        if step > 0:
+            num_steps = int((max_val - min_val) / step)
 
         slider = ctk.CTkSlider(
             frame,
             from_=min_val,
             to=max_val,
-            number_of_steps=int((max_val - min_val) / step),
+            number_of_steps=num_steps,
             command=on_slider_change,
         )
         slider.pack(fill='x', padx=10)
@@ -166,7 +178,7 @@ class SchedulerGUI(ctk.CTk):
                 with open(self.config_path, 'r') as f:
                     return json.load(f)
         except Exception as e:
-            logger.error(f"Error loading config: {e}")
+            self.logger.error(f"Error loading config: {e}")
 
         return self.default_values.copy()
 
@@ -176,9 +188,9 @@ class SchedulerGUI(ctk.CTk):
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.config_path, 'w') as f:
                 json.dump(values, f, indent=2)
-            logger.info("Configuration saved successfully")
+            self.logger.info("Configuration saved successfully")
         except Exception as e:
-            logger.error(f"Error saving config: {e}")
+            self.logger.error(f"Error saving config: {e}")
 
     def get_current_values(self) -> dict:
         """Pobiera aktualne wartości ze sliderów"""
@@ -201,7 +213,7 @@ class SchedulerGUI(ctk.CTk):
         values = self.get_current_values()
         self.save_config(values)
         # Tu dodamy później wywołanie głównego algorytmu
-        logger.info(f"Starting scheduler with parameters: {values}")
+        self.logger.info(f"Starting scheduler with parameters: {values}")
 
     def create_widgets(self):
         # Zakładki
@@ -255,12 +267,7 @@ class SchedulerGUI(ctk.CTk):
         progress_window = self.create_progress_window()
 
         def update_progress(progress_data):
-            progress_window.update_progress(
-                progress_data['progress_percent'],
-                f"Generacja {progress_data['generation']}\n"
-                f"Najlepszy wynik: {progress_data['best_fitness']:.2f}\n"
-                f"Średni wynik: {progress_data['avg_fitness']:.2f}"
-            )
+            self.after(0, progress_window.update_progress, progress_data)
 
         # Uruchom generowanie w osobnym wątku
         thread = threading.Thread(
@@ -271,21 +278,29 @@ class SchedulerGUI(ctk.CTk):
     def run_generation(self, generator: ScheduleGenerator, progress_callback, progress_window):
         """Uruchamia generowanie planu w osobnym wątku"""
         try:
-            schedule, progress_history, generation_stats = generator.generate(progress_callback)
+            def safe_update_progress(progress_data):
+                self.after(0, progress_callback, progress_data)
+
+            schedule, progress_history, generation_stats = generator.generate(safe_update_progress)
 
             # Zamknij okno postępu
             self.after(0, progress_window.destroy)
 
-            # Pokaż wyniki w głównym wątku - przekazujemy teraz generation_stats
-            self.after(0, lambda: self.show_results(schedule, progress_history, generation_stats))
+            # Pokaż wyniki w głównym wątku
+            self.after(0, self.show_results, schedule, progress_history, generation_stats)
 
         except Exception as e:
-            logger.error(f"Error during generation: {str(e)}", exc_info=True)
-            error_message = str(e)  # Zapisz wiadomość o błędzie
+            self.logger.error(f"Error during generation: {str(e)}", exc_info=True)
+            error_message = str(e)
 
             def show_error():
-                progress_window.destroy()
-                messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {error_message}")
+                try:
+                    if progress_window.winfo_exists():
+                        progress_window.destroy()
+                    messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {error_message}")
+                except:
+                    # Na wypadek, gdyby okno zostało już zamknięte
+                    messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {error_message}")
 
             self.after(0, show_error)
 

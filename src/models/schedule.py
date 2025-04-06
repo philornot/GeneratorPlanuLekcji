@@ -22,6 +22,7 @@ class Schedule:
         self.lessons = []
         self.class_groups = set()
         self.school = school
+        self.logger = GPLLogger(__name__)
 
     def get_class_lessons(self, class_name: str) -> List[Lesson]:
         """Zwraca wszystkie lekcje dla danej klasy"""
@@ -63,17 +64,42 @@ class Schedule:
             return False
 
         if not self._check_conflicts(lesson):
-            logger.debug(f"Dodaję lekcję: {lesson.subject.name} dla klasy {lesson.class_group}")
             self.lessons.append(lesson)
             self.class_groups.add(lesson.class_group)
             return True
 
-        logger.debug(f"Konflikt przy próbie dodania lekcji: {lesson.subject.name} dla klasy {lesson.class_group}")
         return False
+
+    @staticmethod
+    def _conflict_reason(new_lesson: Lesson, existing_lesson: Lesson) -> str:
+        """Zwraca powód konfliktu między lekcjami"""
+        if new_lesson.day != existing_lesson.day or new_lesson.hour != existing_lesson.hour:
+            return "Brak konfliktu - różne godziny"
+
+        if new_lesson.teacher == existing_lesson.teacher:
+            return f"Ten sam nauczyciel: {new_lesson.teacher.name}"
+
+        if new_lesson.class_group == existing_lesson.class_group:
+            return f"Ta sama klasa: {new_lesson.class_group}"
+
+        if new_lesson.classroom == existing_lesson.classroom:
+            return f"Ta sama sala: {new_lesson.classroom.name}"
+
+        return "Nieznany konflikt"
 
     def _check_conflicts(self, new_lesson: Lesson) -> bool:
         """Sprawdza, czy nowa lekcja nie powoduje konfliktów"""
-        return any(new_lesson.conflicts_with(lesson) for lesson in self.lessons)
+        day, hour = new_lesson.day, new_lesson.hour
+
+        # Sprawdź tylko lekcje o tej samej godzinie
+        for lesson in self.lessons:
+            if lesson.day == day and lesson.hour == hour:
+                if (lesson.teacher == new_lesson.teacher or
+                        lesson.classroom == new_lesson.classroom or
+                        lesson.class_group == new_lesson.class_group):
+                    return True
+
+        return False
 
     def to_dict(self) -> Dict:
         """Konwertuje plan do słownika do zapisu w JSON"""

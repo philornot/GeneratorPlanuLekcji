@@ -33,6 +33,9 @@ class GeneticEvaluator:
         # Cache dla optymalizacji
         self._metrics_cache = {}
         self.cache_size_limit = 1000
+        self._fitness_cache = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
 
         # Wagi dla różnych komponentów oceny
         self.weights = {
@@ -54,22 +57,33 @@ class GeneticEvaluator:
             Tuple[float]: Pojedyncza wartość fitness w krotce (wymagane przez DEAP)
         """
         try:
-            # Jeśli dostaliśmy listę (osobnika), konwertujemy na Schedule
+            # Jeśli dostaliśmy listę (osobnika), sprawdź cache i ew. konwertuj na Schedule
             if isinstance(schedule, list):
+                # Wylicz hash dla osobnika jako cache key
+                try:
+                    # Sortujemy i konwertujemy na tuple dla hashowania
+                    cache_key = tuple(sorted(tuple(x) if x is not None else None for x in schedule))
+
+                    # Sprawdź czy w cache
+                    if cache_key in self._fitness_cache:
+                        self._cache_hits += 1
+                        return self._fitness_cache[cache_key]
+
+                    self._cache_misses += 1
+                except Exception as e:
+                    # Jeśli problem z utworzeniem klucza, ignoruj cache
+                    self.logger.debug(f"Cache key generation error: {str(e)}")
+                    pass
+
+                # Konwertuj na Schedule jeśli potrzeba
                 schedule = self.operators.convert_to_schedule(schedule)
                 if not schedule:
-                    self.logger.error("Failed to convert individual to Schedule")
                     return (0.0,)
 
             # Sprawdzenie czy mamy poprawny obiekt Schedule
             if not isinstance(schedule, Schedule):
                 self.logger.error(f"Invalid schedule type: {type(schedule)}")
                 return (0.0,)
-
-            # Próba pobrania z cache'a
-            schedule_hash = self._calculate_schedule_hash(schedule)
-            if schedule_hash in self._metrics_cache:
-                return (self._metrics_cache[schedule_hash].total_score,)
 
             # Obliczenie wszystkich metryk
             try:
@@ -98,16 +112,25 @@ class GeneticEvaluator:
             total_score = max(0, min(100, total_score - sum(penalties.values()) + sum(rewards.values())))
 
             # Zapisanie do cache'a
-            result = EvaluationResult(total_score, metrics, penalties, rewards)
-            self._update_cache(schedule_hash, result)
+            result = (total_score,)
+            if 'cache_key' in locals() and cache_key is not None:
+                self._fitness_cache[cache_key] = result
 
-            self.logger.debug(
-                f"Schedule evaluation: {total_score:.2f}",
-                cache_key=f"eval_{schedule_hash}"
-            )
+                # Limit rozmiaru cache
+                if len(self._fitness_cache) > 10000:  # Ogranicz rozmiar cache
+                    # Usuń 20% najstarszych wpisów
+                    to_remove = int(len(self._fitness_cache) * 0.2)
+                    for old_key in list(self._fitness_cache.keys())[:to_remove]:
+                        del self._fitness_cache[old_key]
+
+            # Logowanie statystyk cache co 1000 wywołań
+            if (self._cache_hits + self._cache_misses) % 1000 == 0:
+                hit_rate = self._cache_hits / (self._cache_hits + self._cache_misses) * 100 if (
+                                                                                                           self._cache_hits + self._cache_misses) > 0 else 0
+                self.logger.debug(f"Fitness cache: {hit_rate:.1f}% hit rate, cache size: {len(self._fitness_cache)}")
 
             # Zwróć wynik jako krotkę (wymagane przez DEAP)
-            return (total_score,)
+            return result
 
         except Exception as e:
             self.logger.error(f"Error during schedule evaluation: {str(e)}")
@@ -118,6 +141,7 @@ class GeneticEvaluator:
         try:
             total_required = 0
             total_scheduled = 0
+            score = 100.0
 
             for class_group in self.school.class_groups:
                 required_hours = sum(
@@ -126,12 +150,25 @@ class GeneticEvaluator:
                 )
                 scheduled_hours = len(schedule.get_class_lessons(class_group.name))
 
+                # Dramatyczna kara za puste klasy (zwłaszcza młodsze)
+                if scheduled_hours == 0:
+                    penalty = 50.0  # Bardzo duża kara
+                    # Dodatkowa kara dla klas pierwszych
+                    if class_group.year == 1:
+                        penalty += 20.0
+                    score -= penalty
+
+                # Kara za niekompletny plan
+                completion_percent = scheduled_hours / required_hours if required_hours > 0 else 0
+                if completion_percent < 0.8:  # Minimum 80% wypełnienia
+                    score -= (0.8 - completion_percent) * 100
+
                 total_required += required_hours
                 total_scheduled += scheduled_hours
 
-            completeness = (total_scheduled / total_required * 100) if total_required > 0 else 0
-            return min(100, completeness)
-
+            # Globalny współczynnik wypełnienia
+            overall_completion = (total_scheduled / total_required * 100) if total_required > 0 else 0
+            return max(0, min(score, overall_completion))
         except Exception as e:
             self.logger.error(f"Error evaluating completeness: {str(e)}")
             return 0.0
