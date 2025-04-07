@@ -196,7 +196,12 @@ class PopulationManager:
                 gen_start = time.time()
 
                 # Aktualizacja współczynników adaptacyjnych
-                diversity = calculate_population_diversity(population)
+                try:
+                    diversity = calculate_population_diversity(population)
+                except Exception as e:
+                    self.logger.warning(f"Error calculating diversity: {str(e)}, using default value")
+                    diversity = 0.5  # Wartość domyślna
+
                 operators.update_adaptive_rates(diversity)
 
                 # Selekcja rodziców

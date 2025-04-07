@@ -78,11 +78,20 @@ def calculate_population_diversity(population: List) -> float:
         return 0.0
 
     # Zamieniamy każdy element osobnika na tuple, żeby był hashowalny
-    unique_individuals = set(
-        tuple(tuple(lesson) for lesson in ind)
-        for ind in population
-    )
-    return len(unique_individuals) / len(population)
+    unique_individuals = set()
+
+    for ind in population:
+        if ind is None:
+            continue
+
+        # Bezpieczne tworzenie tupli z osobnika, obsługując None
+        ind_tuple = tuple(
+            tuple(lesson) if lesson is not None else None
+            for lesson in ind
+        )
+        unique_individuals.add(ind_tuple)
+
+    return len(unique_individuals) / len(population) if population else 0.0
 
 
 def format_time(seconds: float) -> str:

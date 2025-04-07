@@ -230,6 +230,7 @@ class GeneticOperators:
         # Znajdź konflikty w planie
         for i, lesson1 in enumerate(individual):
             if lesson1 is None:
+                problem_points.append(i)
                 continue
 
             # Dodaj punkty dla lekcji w pustych/niedowypełnionych klasach
@@ -292,6 +293,9 @@ class GeneticOperators:
     @staticmethod
     def _check_conflict(lesson1: Tuple, lesson2: Tuple) -> bool:
         """Sprawdza, czy między lekcjami występuje konflikt."""
+        if lesson1 is None or lesson2 is None:
+            return False
+
         if lesson1[0] != lesson2[0] or lesson1[1] != lesson2[1]:
             return False
 
@@ -391,6 +395,10 @@ class GeneticOperators:
         try:
             class_day_lessons = defaultdict(lambda: defaultdict(list))
             for i, lesson in enumerate(individual):
+                # Pomijamy lekcje o wartości None
+                if lesson is None:
+                    continue
+
                 class_day_lessons[lesson[2]][lesson[0]].append((i, lesson))
 
             for class_group, days in class_day_lessons.items():
