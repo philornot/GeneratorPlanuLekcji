@@ -85,11 +85,15 @@ def calculate_population_diversity(population: List) -> float:
             continue
 
         # Bezpieczne tworzenie tupli z osobnika, obsługując None
-        ind_tuple = tuple(
-            tuple(lesson) if lesson is not None else None
-            for lesson in ind
-        )
-        unique_individuals.add(ind_tuple)
+        try:
+            ind_tuple = tuple(
+                tuple(lesson) if lesson is not None else None
+                for lesson in ind
+            )
+            unique_individuals.add(ind_tuple)
+        except TypeError:
+            # Jeśli wystąpi błąd podczas tworzenia tuple, pomiń tego osobnika
+            continue
 
     return len(unique_individuals) / len(population) if population else 0.0
 

@@ -152,6 +152,11 @@ class GeneticOperators:
             Zmutowany osobnik
         """
         try:
+            # Sprawdź czy individual nie jest None
+            if individual is None:
+                Individual = get_individual_class()
+                return Individual([])
+
             # Użyj get_individual_class zamiast creator.Individual
             Individual = get_individual_class()
             mutant = Individual(individual[:])
@@ -291,7 +296,7 @@ class GeneticOperators:
         return list(set(problem_points))  # usuń duplikaty
 
     @staticmethod
-    def _check_conflict(lesson1: Tuple, lesson2: Tuple) -> bool:
+    def _check_conflict(lesson1, lesson2) -> bool:
         """Sprawdza, czy między lekcjami występuje konflikt."""
         if lesson1 is None or lesson2 is None:
             return False
@@ -390,12 +395,15 @@ class GeneticOperators:
         Returns:
             Lista par (początek, koniec) indeksów
         """
+        if individual is None:
+            return []
+
         segments = []
 
         try:
             class_day_lessons = defaultdict(lambda: defaultdict(list))
+
             for i, lesson in enumerate(individual):
-                # Pomijamy lekcje o wartości None
                 if lesson is None:
                     continue
 

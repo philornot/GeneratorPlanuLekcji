@@ -198,11 +198,11 @@ class PopulationManager:
                 # Aktualizacja współczynników adaptacyjnych
                 try:
                     diversity = calculate_population_diversity(population)
+                    operators.update_adaptive_rates(diversity)
                 except Exception as e:
                     self.logger.warning(f"Error calculating diversity: {str(e)}, using default value")
                     diversity = 0.5  # Wartość domyślna
-
-                operators.update_adaptive_rates(diversity)
+                    operators.update_adaptive_rates(diversity)
 
                 # Selekcja rodziców
                 offspring = self._select_parents(population, toolbox)

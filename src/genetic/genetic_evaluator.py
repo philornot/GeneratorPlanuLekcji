@@ -200,7 +200,7 @@ class GeneticEvaluator:
                         for i in range(len(hours) - 1)
                     )
                     if gaps > 0:
-                        penalties.append(5 * gaps)
+                        penalties.append(15 * gaps)
 
                     # Kara za zbyt późne/wczesne lekcje
                     if hours[0] > 2:  # rozpoczęcie po 3 lekcji
