@@ -2,12 +2,11 @@
 
 import logging
 import logging.handlers
-import os
 import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Union
+from typing import Optional, Union
 
 # Importujemy colorama do kolorowania wyjścia
 from colorama import init, Fore, Style
@@ -42,72 +41,10 @@ class ColoredFormatter(logging.Formatter):
         return formatted_msg
 
 
-class ThreadSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
-    """Bezpieczny dla wątków handler rotacji plików"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lock = threading.RLock()
-
-    def emit(self, record):
-        """Thread-safe emitowanie rekordów do pliku"""
-        with self._lock:
-            try:
-                super().emit(record)
-            except Exception as e:
-                # Unikamy zawieszania programu przy problemach z plikami
-                print(f"Błąd zapisywania logu do pliku: {e}")
-
-    def doRollover(self):
-        """Bezpieczniejsza implementacja rotacji plików"""
-        with self._lock:
-            try:
-                # Obsługa problemów z otwartym plikiem na Windows
-                if sys.platform == 'win32':
-                    try:
-                        # Zamykamy plik przed rotacją
-                        if self.stream:
-                            self.stream.close()
-                            self.stream = None
-
-                        # Próbujemy zmienić nazwę pliku
-                        if os.path.exists(self.baseFilename + ".1"):
-                            try:
-                                os.remove(self.baseFilename + ".1")
-                            except:
-                                pass
-
-                        if os.path.exists(self.baseFilename):
-                            try:
-                                os.rename(self.baseFilename, self.baseFilename + ".1")
-                            except:
-                                pass
-
-                        # Tworzymy nowy plik
-                        self.mode = 'w'
-                        self.stream = self._open()
-                        return
-                    except Exception as e:
-                        print(f"Błąd rotacji logu: {e}")
-
-                # Standardowa rotacja dla innych platform
-                super().doRollover()
-            except Exception as e:
-                print(f"Błąd rotacji logu: {e}")
-
-
 class GPLLogger:
     """
-    Zaawansowany logger z kolorowym formatowaniem i obsługą wielowątkowości.
-
-    Przykłady użycia:
-    ```
-    logger = GPLLogger(__name__)
-    logger.info("Rozpoczynam operację")
-    logger.debug("Wartość zmiennej x = %s", x)
-    logger.warning("Uwaga, wykryto potencjalny problem")
-    logger.error("Wystąpił błąd: %s", e)
-    ```
+    Zaawansowany logger z kolorowym formatowaniem, organizacją według poziomów,
+    i osobnym folderem dla każdej sesji.
     """
 
     # Ustawienia domyślne
@@ -116,48 +53,85 @@ class GPLLogger:
     LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s'
     DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-    # Słownik logerów (singleton per name)
-    _instances: Dict[str, 'GPLLogger'] = {}
+    # Mapowanie poziomów logowania na nazwy plików
+    LEVEL_FILES = {
+        logging.DEBUG: "debug.log",
+        logging.INFO: "info.log",
+        logging.WARNING: "warning.log",
+        logging.ERROR: "error.log",
+        logging.CRITICAL: "critical.log"
+    }
 
-    def __new__(cls, name: str, *args, **kwargs):
-        """Implementacja wzorca Singleton per name"""
-        if name not in cls._instances:
-            cls._instances[name] = super(GPLLogger, cls).__new__(cls)
-        return cls._instances[name]
+    # Mapowanie poziomów logowania na minimalne poziomy dla każdego pliku
+    LEVEL_MINIMUMS = {
+        logging.DEBUG: logging.DEBUG,  # debug.log zawiera wszystkie logi
+        logging.INFO: logging.INFO,  # info.log zawiera INFO i wyżej
+        logging.WARNING: logging.WARNING,  # warning.log zawiera WARNING i wyżej
+        logging.ERROR: logging.ERROR,  # error.log zawiera ERROR i wyżej
+        logging.CRITICAL: logging.CRITICAL  # critical.log zawiera tylko CRITICAL
+    }
 
-    def __init__(self, name: str, log_dir: str = 'logs',
-                 log_level: int = DEFAULT_LOG_LEVEL,
-                 console_level: int = DEFAULT_CONSOLE_LEVEL,
-                 format: str = LOG_FORMAT,
-                 date_format: str = DATE_FORMAT):
+    # Root handler kontrolujący wszystkie logi
+    _root_logger = None
+    # Folder dla bieżącej sesji logowania
+    _session_folder = None
 
-        # Unikamy ponownej inicjalizacji
-        if hasattr(self, 'initialized') and self.initialized:
+    @classmethod
+    def setup_root_logger(cls):
+        """Konfiguruje główny logger i folder sesji"""
+        if cls._root_logger is not None:
             return
 
+        # Utwórz główny logger
+        cls._root_logger = logging.getLogger()
+        cls._root_logger.setLevel(logging.DEBUG)
+
+        # Usuń istniejące handlery
+        for handler in cls._root_logger.handlers[:]:
+            cls._root_logger.removeHandler(handler)
+
+        # Utwórz folder sesji z timestampem
+        timestamp = datetime.now().strftime("session-log_%d-%m-%Y_%H-%M-%S")
+        cls._session_folder = Path("logs") / f"{timestamp}"
+        cls._session_folder.mkdir(parents=True, exist_ok=True)
+
+        # Formattery dla plików i konsoli
+        file_formatter = logging.Formatter(cls.LOG_FORMAT, cls.DATE_FORMAT)
+        console_formatter = ColoredFormatter(cls.LOG_FORMAT, cls.DATE_FORMAT)
+
+        # Utwórz handlery dla każdego poziomu logowania
+        for level, filename in cls.LEVEL_FILES.items():
+            min_level = cls.LEVEL_MINIMUMS[level]
+
+            file_handler = logging.FileHandler(
+                cls._session_folder / filename,
+                mode='a',
+                encoding='utf-8'
+            )
+            file_handler.setLevel(min_level)
+            file_handler.setFormatter(file_formatter)
+            cls._root_logger.addHandler(file_handler)
+
+        # Dodaj handler dla konsoli
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(cls.DEFAULT_CONSOLE_LEVEL)
+        console_handler.setFormatter(console_formatter)
+        cls._root_logger.addHandler(console_handler)
+
+        # Utwórz plik z informacją o sesji
+        with open(cls._session_folder / "session_info.txt", "w", encoding="utf-8") as f:
+            f.write(f"Session started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Python version: {sys.version}\n")
+            f.write(f"Platform: {sys.platform}\n")
+
+    def __init__(self, name: str):
+        """Inicjalizuje logger dla konkretnego modułu"""
+        # Upewnij się, że główny logger jest skonfigurowany
+        self.__class__.setup_root_logger()
+
+        # Utwórz logger dla konkretnego modułu
         self.name = name
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(log_level)
-
-        # Usuwamy istniejące handlery (aby uniknąć duplikacji)
-        if self.logger.handlers:
-            self.logger.handlers.clear()
-
-        # Utworzenie katalogu logów
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True, parents=True)
-
-        # Format logu
-        self.log_format = format
-        self.date_format = date_format
-
-        # Tworzymy formattery
-        file_formatter = logging.Formatter(format, date_format)
-        console_formatter = ColoredFormatter(format, date_format)
-
-        # Tworzymy handlery
-        self._setup_file_handler(file_formatter, log_level)
-        self._setup_console_handler(console_formatter, console_level)
 
         # Cache dla unikania duplikacji logów
         self._log_cache = set()
@@ -165,49 +139,27 @@ class GPLLogger:
         # Lock dla bezpieczeństwa wątków
         self._lock = threading.RLock()
 
-        # Oznaczamy jako zainicjalizowany
-        self.initialized = True
-
-        # Log potwierdzający inicjalizację
+        # Loguj inicjalizację
         self.debug(f"Logger initialized: {name}")
 
-    def _setup_file_handler(self, formatter: logging.Formatter, level: int):
-        """Konfiguruje handler dla zapisywania do pliku"""
-        log_file = self.log_dir / f'{self.name}_{datetime.now().strftime("%Y%m%d")}.log'
-
-        # Używamy naszego bezpiecznego handlera
-        file_handler = ThreadSafeRotatingFileHandler(
-            log_file,
-            maxBytes=10 * 1024 * 1024,  # 10MB
-            backupCount=5,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(level)
-
-        self.logger.addHandler(file_handler)
-
-    def _setup_console_handler(self, formatter: logging.Formatter, level: int):
-        """Konfiguruje handler dla wyświetlania na konsoli"""
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(level)
-
-        self.logger.addHandler(console_handler)
-
     def debug(self, msg: str, *args, **kwargs):
+        """Log na poziomie DEBUG"""
         self._log('debug', msg, *args, **kwargs)
 
     def info(self, msg: str, *args, **kwargs):
+        """Log na poziomie INFO"""
         self._log('info', msg, *args, **kwargs)
 
     def warning(self, msg: str, *args, **kwargs):
+        """Log na poziomie WARNING"""
         self._log('warning', msg, *args, **kwargs)
 
     def error(self, msg: str, *args, **kwargs):
+        """Log na poziomie ERROR"""
         self._log('error', msg, *args, **kwargs)
 
     def critical(self, msg: str, *args, **kwargs):
+        """Log na poziomie CRITICAL"""
         self._log('critical', msg, *args, **kwargs)
 
     def exception(self, msg: str, *args, exc_info=True, **kwargs):
@@ -216,7 +168,7 @@ class GPLLogger:
 
     def _log(self, level: str, msg: str, *args, cache_key: Optional[str] = None, **kwargs):
         """
-        Logowanie z cache'owaniem aby uniknąć duplikacji
+        Logowanie z cache'owaniem, aby uniknąć duplikacji
         """
         with self._lock:
             # Sprawdzenie cache'a
@@ -240,7 +192,7 @@ class GPLLogger:
                 print(f"Original message: {level.upper()} - {msg}")
 
     def set_level(self, level: Union[int, str]):
-        """Zmienia poziom logowania"""
+        """Zmienia poziom logowania dla tego loggera"""
         if isinstance(level, str):
             level = getattr(logging, level.upper())
         self.logger.setLevel(level)
@@ -249,6 +201,13 @@ class GPLLogger:
         """Czyści cache logów"""
         with self._lock:
             self._log_cache.clear()
+
+    @classmethod
+    def get_session_folder(cls) -> Path:
+        """Zwraca ścieżkę do folderu bieżącej sesji"""
+        if cls._session_folder is None:
+            cls.setup_root_logger()
+        return cls._session_folder
 
 
 # Funkcja pomocnicza dla łatwego tworzenia loggera
