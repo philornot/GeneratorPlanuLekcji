@@ -70,10 +70,6 @@ class SchedulerGUI(ctk.CTk):
         # Wczytaj zapisane wartości lub użyj domyślnych
         self.values = self.load_config()
 
-        # Flagi zatrzymania i referencja do generatora
-        self.stop_requested = False
-        self.generator = None
-
         self.create_widgets()
 
     def create_parameter_slider(self, parent, label_text: str, min_val: float,
@@ -234,36 +230,19 @@ class SchedulerGUI(ctk.CTk):
         self.params_frame = self.create_params_frame(params_tab)
         self.params_frame.pack(fill='both', expand=True)
 
-        # Frame na przyciski
-        self.button_frame = ctk.CTkFrame(self)
-        self.button_frame.pack(pady=10)
-
         # Przycisk uruchomienia
         self.run_button = ctk.CTkButton(
-            self.button_frame,
+            self,
             text="Generuj plan",
             command=self.run_scheduler
         )
-        self.run_button.pack(side='left', padx=10)
+        self.run_button.pack(pady=10)
 
-        # Przycisk zatrzymania (początkowo wyłączony)
-        self.stop_button = ctk.CTkButton(
-            self.button_frame,
-            text="Zatrzymaj generację",
-            command=self.stop_generation,
-            state="disabled",
-            fg_color="#B22222",  # Czerwony kolor przycisku
-            hover_color="#8B0000"  # Ciemniejszy czerwony przy najechaniu
-        )
-        self.stop_button.pack(side='left', padx=10)
-
-    def stop_generation(self):
-        """Zatrzymuje trwającą generację planu"""
-        if self.generator:
-            self.logger.info("Zatrzymanie generacji na żądanie użytkownika")
-            self.stop_requested = True
-            messagebox.showinfo("Zatrzymywanie",
-                                "Proces generacji zostanie zatrzymany po zakończeniu bieżącej generacji.")
+    def create_progress_window(self) -> ProgressWindow:
+        """Tworzy i zwraca okno postępu"""
+        progress_window = ProgressWindow()
+        progress_window.grab_set()  # blokuje interakcję z głównym oknem
+        return progress_window
 
     def run_scheduler(self):
         """Uruchamia generowanie planu"""
@@ -274,38 +253,25 @@ class SchedulerGUI(ctk.CTk):
 
         params = self.get_current_values()
 
-        # Resetuj flagę zatrzymania
-        self.stop_requested = False
-
-        # Zmień stan przycisków
-        self.stop_button.configure(state="normal")
-        self.run_button.configure(state="disabled")
-
         # Utwórz szkołę
         try:
             school = School(school_config)
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie udało się utworzyć szkoły: {str(e)}")
-            # Przywróć stan przycisków
-            self.stop_button.configure(state="disabled")
-            self.run_button.configure(state="normal")
             return
 
-        # Utwórz generator i zapisz referencję
-        self.generator = ScheduleGenerator(school, params)
+        # Utwórz generator
+        generator = ScheduleGenerator(school, params)
 
         # Utwórz okno postępu
         progress_window = self.create_progress_window()
 
         def update_progress(progress_data):
-            # Dodaj flagę zatrzymania do danych postępu
-            if self.stop_requested:
-                progress_data['stopping'] = True
             self.after(0, progress_window.update_progress, progress_data)
 
         # Uruchom generowanie w osobnym wątku
         thread = threading.Thread(
-            target=lambda: self.run_generation(self.generator, update_progress, progress_window)
+            target=lambda: self.run_generation(generator, update_progress, progress_window)
         )
         thread.start()
 
@@ -315,10 +281,6 @@ class SchedulerGUI(ctk.CTk):
             def safe_update_progress(progress_data):
                 self.after(0, progress_callback, progress_data)
 
-                # Sprawdź, czy użytkownik zażądał zatrzymania
-                if self.stop_requested:
-                    generator.stop_generation = True
-
             schedule, progress_history, generation_stats = generator.generate(safe_update_progress)
 
             # Zamknij okno postępu
@@ -326,12 +288,6 @@ class SchedulerGUI(ctk.CTk):
 
             # Pokaż wyniki w głównym wątku
             self.after(0, self.show_results, schedule, progress_history, generation_stats)
-
-            # Resetuj stan przycisków
-            self.after(0, lambda: (
-                self.run_button.configure(state="normal"),
-                self.stop_button.configure(state="disabled")
-            ))
 
         except Exception as e:
             self.logger.error(f"Error during generation: {str(e)}", exc_info=True)
@@ -346,8 +302,9 @@ class SchedulerGUI(ctk.CTk):
                     # Na wypadek, gdyby okno zostało już zamknięte
                     messagebox.showerror("Błąd", f"Wystąpił błąd podczas generowania planu: {error_message}")
 
-                # Przywróć stan przycisków
-                self.run_button.configure(state="normal")
-                self.stop_button.configure(state="disabled")
-
             self.after(0, show_error)
+
+    def show_results(self, schedule: Schedule, progress_history: List[Dict], generation_stats: GenerationStats):
+        """Pokazuje okno z wynikami"""
+        results_window = ScheduleResultsWindow(schedule, progress_history, generation_stats)
+        results_window.grab_set()  # Zablokuj główne okno
