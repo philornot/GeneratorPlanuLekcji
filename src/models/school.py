@@ -133,65 +133,115 @@ class School:
 
     def initialize_classes(self, config: Dict):
         """Inicjalizuje klasy na podstawie konfiguracji"""
-        logger.debug(f"Rozpoczynam inicjalizację klas z konfiguracją: {config}")
+        try:
+            logger.debug(f"Rozpoczynam inicjalizację klas z konfiguracją: {config}")
 
-        if not config.get('class_counts', {}).get('first_year', 0):
-            logger.warning("Nie wybrano żadnej klasy pierwszej, dodaję domyślnie jedną")
-            config['class_counts']['first_year'] = 1
+            # Walidacja podstawowa
+            if not isinstance(config, dict):
+                raise ValueError(f"Nieprawidłowa konfiguracja: {config}")
 
-        if not isinstance(config, dict):
-            raise ValueError(f"Nieprawidłowa konfiguracja: {config}")
+            if 'class_counts' not in config:
+                raise ValueError("Brak informacji o liczbie klas w konfiguracji")
 
-        if 'class_counts' not in config:
-            raise ValueError("Brak informacji o liczbie klas w konfiguracji")
+            # Dodaj domyślnie jedną klasę pierwszą, jeśli nie została zdefiniowana
+            try:
+                if not config.get('class_counts', {}).get('first_year', 0):
+                    logger.warning("Nie wybrano żadnej klasy pierwszej, dodaję domyślnie jedną")
+                    if 'class_counts' not in config:
+                        config['class_counts'] = {}
+                    config['class_counts']['first_year'] = 1
+            except Exception as e:
+                logger.error(f"Błąd podczas sprawdzania liczby klas: {str(e)}")
+                # Ustaw domyślną wartość, aby kontynuować
+                config['class_counts'] = {'first_year': 1}
 
-        year_keys = ['first_year', 'second_year', 'third_year', 'fourth_year']
+            year_keys = ['first_year', 'second_year', 'third_year', 'fourth_year']
 
-        # Sprawdź profile
-        available_profiles = config.get('profiles', [])
-        if not available_profiles:
-            logger.warning("Brak zdefiniowanych profili, używam domyślnego")
-            available_profiles = [{
-                'name': 'ogólny',
-                'extended_subjects': ['matematyka', 'angielski']
-            }]
+            # Używamy już zainicjalizowanej listy profili
+            available_profiles = self.profiles
+            if not available_profiles:
+                logger.error("Pusta lista profili w initialize_classes, to nie powinno się zdarzyć")
+                return
 
-        logger.debug(f"Dostępne profile: {available_profiles}")
+            logger.debug(f"Dostępne profile: {[p.get('name', 'bez_nazwy') for p in available_profiles]}")
 
-        for year_idx, year_key in enumerate(year_keys, 1):
-            class_count = config['class_counts'].get(year_key, 0)
-            logger.debug(f"Tworzę {class_count} klas dla rocznika {year_key}")
+            # Tworzenie klas dla każdego rocznika
+            for year_idx, year_key in enumerate(year_keys, 1):
+                try:
+                    class_count = config['class_counts'].get(year_key, 0)
+                    logger.debug(f"Tworzę {class_count} klas dla rocznika {year_key}")
 
-            for class_idx in range(class_count):
-                profile = available_profiles[class_idx % len(available_profiles)]
-                logger.debug(
-                    f"Używam profilu: {profile['name']} dla klasy {year_idx}{string.ascii_uppercase[class_idx]}")
+                    for class_idx in range(class_count):
+                        try:
+                            # Wybierz profil, obsługując przypadek pustej listy
+                            profile_idx = class_idx % len(available_profiles) if available_profiles else 0
+                            profile = available_profiles[profile_idx]
 
-                # Przygotuj listę przedmiotów dla klasy
-                class_subjects = []
+                            logger.debug(
+                                f"Używam profilu: {profile['name']} dla klasy {year_idx}{string.ascii_uppercase[class_idx]}")
 
-                # Dodaj podstawowe przedmioty
-                for subject in self.subjects.values():
-                    if not subject.name.endswith('_rozszerzony'):
-                        class_subjects.append(subject)
+                            # Przygotuj listę przedmiotów dla klasy
+                            class_subjects = []
 
-                # Dodaj przedmioty rozszerzone
-                for subject_name in profile['extended_subjects']:
-                    extended_name = f"{subject_name}_rozszerzony"
-                    if extended_name in self.subjects:
-                        class_subjects.append(self.subjects[extended_name])
-                    else:
-                        logger.warning(f"Extended subject not found: {extended_name}")
+                            # Dodaj podstawowe przedmioty
+                            try:
+                                for subject in self.subjects.values():
+                                    if not subject.name.endswith('_rozszerzony'):
+                                        class_subjects.append(subject)
+                            except Exception as e:
+                                logger.error(f"Błąd podczas dodawania podstawowych przedmiotów: {str(e)}")
 
-                # Utwórz klasę
-                class_group = ClassGroup(
-                    year=year_idx,
-                    letter=string.ascii_uppercase[class_idx],
-                    profile=profile['name'],
-                    subjects=class_subjects
+                            # Dodaj przedmioty rozszerzone
+                            try:
+                                for subject_name in profile.get('extended_subjects', []):
+                                    extended_name = f"{subject_name}_rozszerzony"
+                                    if extended_name in self.subjects:
+                                        class_subjects.append(self.subjects[extended_name])
+                                    else:
+                                        logger.warning(f"Extended subject not found: {extended_name}")
+                            except Exception as e:
+                                logger.error(f"Błąd podczas dodawania przedmiotów rozszerzonych: {str(e)}")
+
+                            # Tworzenie obiektu klasy z obsługą wyjątków
+                            try:
+                                # Bezpieczny dostęp do ASCII_UPPERCASE z kontrolą zakresu
+                                letter = string.ascii_uppercase[min(class_idx, len(string.ascii_uppercase) - 1)]
+
+                                class_group = ClassGroup(
+                                    year=year_idx,
+                                    letter=letter,
+                                    profile=profile.get('name', 'domyślny'),
+                                    subjects=class_subjects
+                                )
+                                self.class_groups.append(class_group)
+                                logger.debug(
+                                    f"Created class {class_group.name} with profile {profile.get('name', 'domyślny')}")
+                            except Exception as e:
+                                logger.error(
+                                    f"Błąd podczas tworzenia klasy {year_idx}{string.ascii_uppercase[min(class_idx, 25)]}: {str(e)}")
+
+                        except Exception as e:
+                            logger.error(f"Błąd podczas inicjalizacji klasy {year_idx}-{class_idx}: {str(e)}")
+
+                except Exception as e:
+                    logger.error(f"Błąd podczas przetwarzania rocznika {year_key}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Krytyczny błąd podczas inicjalizacji klas: {str(e)}")
+            # W przypadku krytycznego błędu spróbuj utworzyć przynajmniej jedną klasę
+            try:
+                # Dodaj domyślną klasę 1A z podstawowymi przedmiotami
+                default_subjects = [s for s in self.subjects.values() if not s.name.endswith('_rozszerzony')]
+                default_class = ClassGroup(
+                    year=1,
+                    letter='A',
+                    profile='awaryjny',
+                    subjects=default_subjects
                 )
-                self.class_groups.append(class_group)
-                logger.debug(f"Created class {class_group.name} with profile {profile['name']}")
+                self.class_groups.append(default_class)
+                logger.warning("Utworzono awaryjną klasę 1A z podstawowymi przedmiotami")
+            except Exception as recovery_error:
+                logger.critical(f"Nie udało się utworzyć awaryjnej klasy: {str(recovery_error)}")
 
     def get_subject(self, name: str) -> Subject:
         """Zwraca przedmiot o danej nazwie"""
