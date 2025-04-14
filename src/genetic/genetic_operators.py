@@ -152,29 +152,14 @@ class GeneticOperators:
             Zmutowany osobnik
         """
         try:
-            # Sprawdź, czy individual nie jest None
+            # Sprawdź czy individual nie jest None
             if individual is None:
-                self.logger.warning("Received None individual in mutation")
                 Individual = get_individual_class()
                 return Individual([])
 
-            # Używaj get_individual_class zamiast creator.Individual
+            # Użyj get_individual_class zamiast creator.Individual
             Individual = get_individual_class()
             mutant = Individual(individual[:])
-
-            # Filtruj None przed operacjami na elementach
-            valid_elements = [i for i in range(len(mutant)) if mutant[i] is not None]
-
-            # Inicjalizacja domyślna
-            mutation_points = []
-
-            # Bezpieczne operacje na losowym sample
-            if valid_elements:  # Upewnij się, że lista nie jest pusta
-                # Wybierz max 5 punktów lub mniej, jeśli nie ma tylu elementów
-                mutation_points = random.sample(
-                    valid_elements,
-                    k=min(5, len(valid_elements))
-                )
 
             # Wypełnianie dziur
             schedule = self.convert_to_schedule(mutant)
@@ -213,8 +198,7 @@ class GeneticOperators:
             return mutant
 
         except Exception as e:
-            import traceback
-            self.logger.error(f"＼(｀0´)／ Mutacja nie powiodła się: {str(e)}\n{traceback.format_exc()}")
+            self.logger.error(f"Mutation failed: {str(e)}")
             return individual  # W przypadku błędu zwróć oryginalny osobnik
 
     def _select_mutation_points(self, individual: List) -> List[int]:
@@ -227,23 +211,15 @@ class GeneticOperators:
         Returns:
             Lista indeksów do mutacji
         """
-        # Zabezpieczenie przed pustą listą
-        if not individual:
-            return []
-
         schedule = self.convert_to_schedule(individual)
         problem_points = []
 
         # Jeśli nie udało się utworzyć planu, wybierz losowe punkty
         if not schedule:
-            num_points = min(10, max(1, len(individual) // 10))
-            # Bezpieczny sample - upewnij się, że mamy wystarczającą liczbę elementów
-            if len(individual) == 0:
-                return []
-            elif len(individual) < num_points:
-                return list(range(len(individual)))
-            else:
-                return random.sample(range(len(individual)), k=num_points)
+            return random.sample(
+                range(len(individual)),
+                k=min(10, max(1, len(individual) // 10))
+            )
 
         # Licz lekcje per klasa
         class_lesson_counts = {}
@@ -295,37 +271,27 @@ class GeneticOperators:
 
         # Jeśli nie znaleziono problemów lub mamy za dużo punktów, optymalizuj
         if not problem_points:
-            num_points = max(1, min(5, len(individual) // 20))
-            if len(individual) < num_points:
-                return list(range(len(individual)))
-            else:
-                return random.sample(range(len(individual)), k=num_points)
+            problem_points = random.sample(
+                range(len(individual)),
+                k=max(1, min(5, len(individual) // 20))
+            )
         elif len(problem_points) > 10:
             # Za dużo punktów, wybierz najważniejsze
             # Priorytetyzuj punkty związane z pustymi klasami
             empty_class_points = [p for p in problem_points
-                                  if p < len(individual) and individual[p] is not None
-                                  and individual[p][2] in empty_classes]
+                                  if individual[p] is not None and individual[p][2] in empty_classes]
 
             if empty_class_points:
                 # Wybierz wszystkie punkty dla pustych klas + kilka losowych
                 other_points = [p for p in problem_points if p not in empty_class_points]
-
-                # Bezpieczne użycie random.sample
-                num_others = min(5, len(other_points))
-                if num_others == 0:
-                    selected_others = []
-                else:
-                    selected_others = random.sample(other_points, k=num_others)
-
+                selected_others = random.sample(
+                    other_points,
+                    k=min(5, len(other_points))
+                )
                 problem_points = empty_class_points + selected_others
             else:
-                # Wybierz losowe punkty - bezpieczne użycie
-                num_points = min(10, len(problem_points))
-                problem_points = random.sample(problem_points, k=num_points) if num_points > 0 else []
-
-        # Odfiltruj indeksy poza zakresem tablicy
-        problem_points = [p for p in problem_points if 0 <= p < len(individual)]
+                # Wybierz losowe punkty
+                problem_points = random.sample(problem_points, k=10)
 
         return list(set(problem_points))  # usuń duplikaty
 
@@ -349,10 +315,6 @@ class GeneticOperators:
 
         for day, hour, class_group in empty_slots:
             for i, lesson in enumerate(individual):
-                # Dodane zabezpieczenie przed None
-                if lesson is None:
-                    continue
-
                 if (lesson[2] == class_group and  # ta sama klasa
                         lesson[0] == day and  # ten sam dzień
                         abs(lesson[1] - hour) <= 1):  # sąsiednia godzina

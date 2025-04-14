@@ -2,6 +2,3 @@
 /.venv/
 /src/logs/
 /src/data/
-/tests/logs/
-/tests/data/
-/tests/reports/
